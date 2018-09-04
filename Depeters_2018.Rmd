@@ -14,6 +14,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Loading packages
 ```{r loading packages, warning=FALSE}
 #load the packages
 #library(dada2); packageVersion("dada2")
@@ -33,6 +34,7 @@ setwd("C:/Users/jvhagey/OneDrive - UC Davis/Documents/collaboration/Depeters")
 #setting working directory
 setwd("C:/Users/Jill/OneDrive - UC Davis/Documents/collaboration/Depeters")
 ```
+
 #Running DADA2 to get ASVs and assign taxonomy
 
 Lots of code involved here, but I'll spare you the details.
@@ -134,6 +136,7 @@ write(fasta_format,"asv_seqs.fa")
 ```
 
 #Making phyloseq object
+
 ```{r Making phyloseq object}
 setwd("C:/Users/Jill/OneDrive - UC Davis/Documents/collaboration/Depeters/DADA2_Out")
 seqtab.nochim <- readRDS("seqtab.nochim.rds")
@@ -151,15 +154,12 @@ otu_table(ps) <- t(otu_table(ps))
 
 #Control Samples
 
-```{r}
+I didn't demultiplex the kits yet so I will need to do this before publishing
+
+```{r checking out kit sequences, eval=FALSE, include=FALSE}
 #Checking the taxa present in kits
 ps_FecalKit <- subset_samples(ps, Sample_Type == c("TMR_fecal_kit"))
 ps_PlantKit <- subset_samples(ps, Sample_Type == c("TMR_plant_kit"))
-
-
-#removing control kits from overall samples
-ps <- subset_samples(ps, Sample_Type != c("TMR_fecal_kit"))
-ps <- subset_samples(ps, Sample_Type != c("TMR_plant_kit"))
 ```
 
 #Cleaning data
@@ -167,8 +167,8 @@ Currently, we are starting with 23,727 ASVs from 68 samples
 
 ```{r}
 #removing control kits from dataset
-ps <- subset_samples(ps, Sample_Type != c("TMR_fecal_kit"))
-ps <- subset_samples(ps, Sample_Type != c("TMR_plant_kit"))
+#ps <- subset_samples(ps, Sample_Type != c("TMR_fecal_kit"))
+#ps <- subset_samples(ps, Sample_Type != c("TMR_plant_kit"))
 #Checking for empty samples, samples with no taxa assoicated with them (should be "FALSE").
 any(sample_sums(ps) == 0)
 #Checking if there are ASVs that aren't present in any samples (should be "FALSE")
@@ -188,10 +188,10 @@ There was no empty samples or taxa which is what we want.
 #number of taxa present
 ntaxa(ps)
 #checking names of taxa present at specific rank
-get_taxa_unique(ps, "Phylum")
-get_taxa_unique(ps, "Order")
-get_taxa_unique(ps, "Family")
-get_taxa_unique(ps, "Genus")
+length(get_taxa_unique(ps, "Phylum"))
+length(get_taxa_unique(ps, "Order"))
+length(get_taxa_unique(ps, "Family"))
+length(get_taxa_unique(ps, "Genus"))
 ```
 
 
@@ -203,12 +203,12 @@ tripletons <- sum(rowSums(ps@otu_table@.Data)==3)
 sum(singletons,doubletons,tripletons)
 ```
 
-Looks like there is no singletons, doubletons, and tripletons which is a bit atypical. This could be due to DADA2 pipeline and removing superfiluous reads (i.e. chimeras and read error). Its also probably a product of having 68 samples and getting deep sequencing. 
+Looks like there is no singletons, doubletons, and tripletons which is a bit atypical. This could be due to DADA2 pipeline and removing superfiluous reads (i.e. chimeras and read error). It's also probably a product of having 68 samples and getting deep sequencing. 
 
 ```{r}
-#Checking which samples have fewer than 5000 reads
+#Checking which samples have fewer than 2000 reads
 #function returns sample name and its column number
-which(!rowSums(otu_table(ps)) > 5000)
+which(!rowSums(otu_table(ps)) > 2000)
 ```
 
 #More cleaning of data
@@ -246,7 +246,7 @@ After filtering out Eukaryotes we have 15,058 ASVs left.
 
 Here we see thht Acidobacteria only has one feature so just looking into this real quick.
 
-```{r}
+```{r warning=FALSE}
 #Making phyloseq object with Acidobacteria
 ps_explore <- subset_taxa(ps, Phylum == c("Acidobacteria"))
 ps_explore@sam_data$Sample_Type
@@ -292,8 +292,7 @@ plot_ordination(pslog, out.pcoa.log, color = "Sample_Type") +
   coord_fixed(sqrt(evals[2] / evals[1]))
 ```
 
-Looks like most fecal samples pull away from the other samples on the first axis.
-Solid and Liquid strained samples move higher on the 2nd axis, but this difference is half that of the differences between fecal samples and all other samples. Overall, it appears that there is 3 "clusters".
+Looks like most fecal samples pull away from the other samples on the first axis.Solid and Liquid strained samples move higher on the 2nd axis, but this difference is half that of the differences between fecal samples and all other samples. Overall, it appears that there is 3 "clusters".
 
 ```{r}
 set.seed(1850)
@@ -360,7 +359,7 @@ eval_per_unwuf <- (out.unwuf.log$values$Eigenvalues/(sum(out.unwuf.log$values$Ei
 barplot(eval_per_unwuf[1:10],names.arg=paste0('Eigenvalue',1:10), ylab="Percent of explained variances", col="blue")
 ```
 
-Notice that less of the variation is explained in each axis with the unweighted versus the weighted unifrac. The distances between points aren't as great with the unweighted versus weighted unifrac, thus it seems that the difference between sample types is due to abundance differences and less about differences in species.
+Notice that less of the variation is explained in each axis with the unweighted versus the weighted unifrac. The distances between points aren't as great with the unweighted versus weighted unifrac, thus it seems that the difference between sample types is due to abundance differences and less about differences in species. The fecal samples are clustered closer together than with the weighted unifrac.
 
 The eigenvalues here suggest a 3rd axis would help capture more of the variation.
 
@@ -370,6 +369,8 @@ plot_ly(data.frame(out.unwuf.log$vectors), x=~Axis.1, y=~Axis.2, z=~Axis.3, colo
          yaxis=list(title="PC2 12.7%"),
          zaxis=list(title="PC3 8.4%"))
 ```
+
+Here there is a similar pattern with 3 clusters forming and fecal samples moved away from other sample types.
 
 ```{r}
 #ploting same weighted unifrac with phyla colored
@@ -391,28 +392,9 @@ plot_ordination(pslog_NoMain, out.unwuf.log.NoMain, type = "species", color = "P
   coord_fixed(sqrt(evals_unw_NoMain[2] / evals_unw_NoMain[1]))
 ```
 
-The distances between points aren't as great with the unweighted versus weighted unifrac, thus it seems that the difference between sample types is due to abundance differences and less about differences in species.
+Again Firmicutes obsure much of the graph and when they are removed the data suggest that most of the varitation in both axsis comes from Bacteroidetes ASVs. 
 
 #Differential Abundance Testing with DESeq2/CornCob
-
-To speed this up initial abundance testing filtering out lower abundance taxa first
-
-```{r}
-#Compute prevalence of each feature, store as data.frame
-prevdf = apply(X = otu_table(ps), MARGIN = ifelse(taxa_are_rows(ps), yes = 1, no = 2),
-               FUN = function(x){sum(x > 0)})
-#Add taxonomy and total read counts to this data.frame
-prevdf = data.frame(Prevalence = prevdf, TotalAbundance = taxa_sums(ps),tax_table(ps))
-
-#Define prevalence threshold as 5% of total samples
-prevalenceThreshold <- 0.20 * nsamples(ps)
-prevalenceThreshold
-
-#Execute prevalence filter, using `prune_taxa()` function
-keepTaxa <- rownames(prevdf)[(prevdf$Prevalence >= prevalenceThreshold)]
-ps2 <- prune_taxa(keepTaxa, ps)
-ps2
-```
 
 ##Deseq2
 
@@ -469,6 +451,8 @@ ggplot(PCA, aes(PC1, PC2, color=Sample_Type)) + geom_point(size=3) +
   xlab(paste0("PC1: ",percentVar[1],"% variance")) +
   ylab(paste0("PC2: ",percentVar[2],"% variance"))
 ```
+
+This looks like 
 
 ##Looking into The Results of DESeq output
 ```{r}
@@ -583,13 +567,116 @@ res_GSvsLU.taxa <- cbind(as(res[[14]], "data.frame"), as(tax_table(ps)[rownames(
 res_LSvsLU.taxa <- cbind(as(res[[15]], "data.frame"), as(tax_table(ps)[rownames(res[[15]]), ], "matrix"))
 
 #Determining taxa of most significantly changed OTU
-#TopOTU_DLvsP <- res_HT_DLvsP.taxa[1,10:13]
-#TopOTU_FSvsP <- res_HT_FSvsP.taxa[1,10:13]
-#TopOTU_FSvsDL <- res_HT_FSvsDL.taxa[1,10:13]
-#res_HT_DLvsP.taxa[grep("denovo2108", rownames(res_HT_DLvsP.taxa)), ]
+res.taxa <- list(res_FvsGS.taxa,res_FvsS.taxa,res_FvsST.taxa,res_FvsLS.taxa,res_FvsLU.taxa,res_SvsST.taxa,res_SvsGS.taxa,res_SvsLS.taxa,
+                 res_SvsLU.taxa,res_STvsGS.taxa,res_STvsLS.taxa,res_STvsLU.taxa,res_GSvsLS.taxa,res_GSvsLU.taxa,res_LSvsLU.taxa)
+TopOTU <- lapply(res.taxa, function(res.taxa) res.taxa[1,10:13])
+```
+
+#Plotting Results of DESeq2
+```{r}
+#Experiment overview two-group comparison. Each gene is represented with a dot. 
+#The red points indicate genes for which the log2 fold change was significantly higher than 1 or less than -1 
+#(treatment resulting in more than doubling or less than halving of the normalized counts).
+#Genes with an adjusted p value below a threshold (here 0.1, the default) are shown in red.
+#The point circled in blue indicates the gene with the lowest adjusted p value.
+
+plotMA(res[[1]],xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-23,6), cex.main=1.5,cex.lab=1.25)
+with(res[[1]][topOTU[[1]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, -15, "Christensenellaceae \n R-7 group", cex=1.5, font= 3, pos=2, col="dodgerblue")
+})
+plotMA(res[[2]],xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-6,6),cex.main=1.5,cex.lab=1.25)
+with(res[[2]][topOTU[[2]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, 5.5, "Christensenellaceae \n R-7 group", cex=1.5, font= 3, pos=2, col="dodgerblue")
+})
+plotMA(res[[3]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-10,10), cex.main=1.5,cex.lab=1.25)
+with(res[[3]][topOTU[[3]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, -9.5, "Christensenellaceae \n R-7 group", cex=1.5, font= 3, pos=2, col="dodgerblue")
+})
+plotMA(res[[4]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-10,10), cex.main=1.5,cex.lab=1.25)
+with(res[[4]][topOTU[[4]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, -9.5, "Christensenellaceae \n R-7 group", cex=1.5, font= 3, pos=2, col="dodgerblue")
+})
+plotMA(res[[5]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-10,10), cex.main=1.5,cex.lab=1.25)
+with(res[[5]][topOTU[[5]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, -9.5, "Christensenellaceae \n R-7 group", cex=1.5, font= 3, pos=2, col="dodgerblue")
+})
+plotMA(res[[6]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-10.5,10.5), cex.main=1.5,cex.lab=1.25)
+with(res[[6]][topOTU[[6]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, -10, "Christensenellaceae", cex=1.5, font= 3, pos=2, col="dodgerblue")
+})
+plotMA(res[[7]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-10,10), cex.main=1.5,cex.lab=1.25)
+with(res[[7]][topOTU[[7]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, -9.5, "Christensenellaceae", cex=1.5, font= 3, pos=2, col="dodgerblue")
+})
+plotMA(res[[8]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-7,7), cex.main=1.5,cex.lab=1.25)
+with(res[[8]][topOTU[8]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, 5.5, "Christensenellaceae", cex=1.5, font= 3, pos=3, col="dodgerblue")
+})
+plotMA(res[[9]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-7,7), cex.main=1.5,cex.lab=1.25)
+with(res[[9]][topOTU[[9]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, 5.5, "Christensenellaceae", cex=1.5, font= 3, pos=3, col="dodgerblue")
+})
+plotMA(res[[10]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-7,7), cex.main=1.5,cex.lab=1.25)
+with(res[[10]][topOTU[[10]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, 5.5, "Fibrobacteraceae", cex=1.5, font= 3, pos=3, col="dodgerblue")
+})
+plotMA(res[[11]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-6,6), cex.main=1.5,cex.lab=1.25)
+with(res[[11]][topOTU[[11]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, 4, "Christensenellaceae", cex=1.4, font= 3, pos=4, col="dodgerblue")
+})
+plotMA(res[[12]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-6.5,6.5), cex.main=1.5,cex.lab=1.25)
+with(res[[12]][topOTU[[12]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, 5, "vadinBE97", cex=1.4, font= 3, pos=3, col="dodgerblue")
+})
+plotMA(res[[13]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-6.5,6.5), cex.main=1.5,cex.lab=1.25)
+with(res[[13]][topOTU[[13]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, 5.5, "Christensenellaceae", cex=1.5, font= 3, pos=2, col="dodgerblue")
+})
+plotMA(res[[14]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-6,6), cex.main=1.5,cex.lab=1.25)
+with(res[[14]][topOTU[[14]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, -5.5, "vadinBE97", cex=1.5, font= 3, pos=2, col="dodgerblue")
+})
+plotMA(res[[15]], xlab="Mean of Normalized Counts", ylab="Log Fold Change", ylim=c(-6.5,6.5), cex.main=1.5,cex.lab=1.25)
+with(res[[15]][topOTU[[15]], ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, 5.5, "Christensenellaceae", cex=1.5, font= 3, pos=2, col="dodgerblue")
+})
 ```
 
 ##Corncob
+
+To speed this up initial abundance testing filtering out lower abundance taxa first
+
+```{r}
+#Compute prevalence of each feature, store as data.frame
+prevdf = apply(X = otu_table(ps), MARGIN = ifelse(taxa_are_rows(ps), yes = 1, no = 2),
+               FUN = function(x){sum(x > 0)})
+#Add taxonomy and total read counts to this data.frame
+prevdf = data.frame(Prevalence = prevdf, TotalAbundance = taxa_sums(ps),tax_table(ps))
+
+#Define prevalence threshold as 5% of total samples
+prevalenceThreshold <- 0.20 * nsamples(ps)
+prevalenceThreshold
+
+#Execute prevalence filter, using `prune_taxa()` function
+keepTaxa <- rownames(prevdf)[(prevdf$Prevalence >= prevalenceThreshold)]
+ps2 <- prune_taxa(keepTaxa, ps)
+ps2
+```
 
 We test all the taxa in our data to see if they are differentially-abundant or differentially-variable.vThe differentialTest function will these tests on all taxa, while controlling the false discovery rate to account for multiple comparisons.
 
@@ -654,7 +741,7 @@ plot(check, color="Sample_Type")
 
 #Alpha Diversity {.tabset}
 
-##Richness
+##Exploring Alpha Diversity
 
 First we will look at richness without including our uncertainty of each measurement.
 ```{r}
@@ -666,6 +753,8 @@ plot(observed_c, ps, color = "SamplePhase")
 ```
 
 Here we have a first look at the richness (number of observed ASVs), however, we will need to account for the differences in sequencing depth. To get an idea of the range of depth we will first grapth out the depth. 
+
+##Depth
 
 ```{r}
 #Looking at samples at different depths as this may be confounded with observed richness. 
@@ -703,7 +792,7 @@ data.frame("Min" = min(sample_sums(ps)),"Max" = max(sample_sums(ps)),
 
 The sequencing depth ranges from 1,884 to 1.73 million reads.
 
-###Running alpha diversity estimate
+##Richness
 
 ```{r}
 #This is an alpha diversity estimate -- a special class for alpha diversity estimates
@@ -718,22 +807,26 @@ The error bars here are quite large, but this is to be expected as there is a lo
 ```{r}
 #testing the hypothesis that different sample types have the same microbial diversity
 #betta() works like a regression model but it accounts for the uncertainty in estimating diversity
-#Testing differences between Sample Phases
-bt_ST <- betta(summary(ba)$estimate,
-            summary(ba)$error,
-            make_design_matrix(ps, "Sample_Type"))
-bt_ST$table
 #Testing differences between Rumen and feces samples
 bt_SL <- betta(summary(ba)$estimate,
             summary(ba)$error,
             make_design_matrix(ps, "SampleLocation"))
 bt_SL$table
+```
 
+When comparing rumen to fecal samples betta() estimates that the mean species-level diversity in feces is 2709 "species". It estimates that the diversity in the rumen is significantly different from the feces. 
+
+```{r}
+#Testing differences between Sample Phases
+bt_ST <- betta(summary(ba)$estimate,
+            summary(ba)$error,
+            make_design_matrix(ps, "Sample_Type"))
+bt_ST$table
 #Note that these estimates account for different sequencing depths!
 #breakaway estimates the number of missing species based on the sequence depth and number of rare taxa in the data
 ```
 
-When comparing rumen to fecal samples betta() estimates that the mean species-level diversity in feces is 2890 "species". It estimates that the diversity in the rumen is not significantly different. When you break the rumen samples up into different sample types betta() estimates the mean species-level diversity in feces is 2738 "species". Liquid strained and unstrained samples have significantly higher "species" (on average 2035 and 2427 species respectively). However, solid samples from the rumen have a lower number of "spieces", but it wasn't significant from fecal samples.
+When you break the rumen samples up into different sample types betta() estimates the mean species-level diversity in feces is 2632 "species". Stomach Tube, Liquid strained and unstrained samples have significantly higher "species" (on average 3829, 2141 and 2520 species respectively). However, solid samples from the rumen have a lower number of "species", but it wasn't significant compared to fecal samples.
 
 ##Evenness
 
@@ -745,8 +838,7 @@ No taxa are found in all samples so first we examine these data to pick a good b
 Core <- filter_taxa(ps, function(x) sum(x >= 1) > (0.98*length(x)), TRUE)
 tax_table(Core) #Seq10878
 ```
-
-
+DivNet is a new tool that allows you to estimate estimate Shannon diversity in the presence of an ecological/microbial network! It also adjusts for different sequencing depths. 
 ```{r}
 #Running DivNet
 dv_ps <- divnet(ps, ncores = 3, base="Seq10878")  #This is 11.8GB
@@ -760,4 +852,26 @@ dv_water$shannon %>%
 
 # or plot them:
 plot(c$shannon, ps, col = "SamplePhase")
+```
+
+```{r}
+#Pull shannon out individually:
+dv_water$shannon %>%
+  summary %>%
+  add_column("Sample_Type" = ps %>% otu_table %>% sample_names)
+
+#Plotting
+plot(c$shannon, ps, col = "Sample_Type")
+```
+
+```{r}
+dv_ps_st <- ps %>%
+  divnet(X = "Sample_Type", ncores = 1)
+
+plot(dv_ps_st$shannon, water, col = "Sample_Type")
+```
+
+#Packages and versions used
+```{r}
+sessionInfo()
 ```
