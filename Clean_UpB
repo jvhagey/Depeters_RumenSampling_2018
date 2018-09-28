@@ -1,0 +1,105 @@
+#-----------------------------------------------------------kneaddata for QC----------------------------------------------------------#
+#!/bin/bash
+##
+#SBATCH -p intel
+#SBATCH --mem=30G
+#SBATCH --time=18:0:0
+#SBATCH -n 15
+#SBATCH -o /share/magalab/Jill/Depeters/Kneaddata/kneaddata.out
+#SBATCH -e /share/magalab/Jill/Depeters/Kneaddata/kneaddata.err
+module load bowtie2/2.3.4.1
+module load fastqc/0.11.7
+module load trimmomatic/0.33
+module load trf/4.0.9
+
+#note that to run this there are some issues with current code base and Python3.
+#The issue is discussed here:  https://bitbucket.org/biobakery/kneaddata/issues/8/error-during-reformatting-of-sequence
+#And a fix can be found here to edit the code base: https://bitbucket.org/biobakery/kneaddata/commits/dbc99e91f332
+kneaddata --bypass-trim --input /share/magalab/Jill/Depeters/Raw/20161213-MMDR_S1_L001_R1_001.fastq.gz --input /share/magalab/Jill/Depeters/Raw/20161213-MMDR_S1_L001_R2_001.fastq.gz -t 15 -db /share/magalab/bin/Fastq_Screen_Index/Cow_Genome_ARS-UCD1.2_Index/ -db /share/magalab/bin/Fastq_Screen_Index/Phage_Index/ -db /share/magalab/bin/Fastq_Screen_Index/Cow_Mito_Index/ -db /share/magalab/bin/Fastq_Screen_Index/Human_Index/ --output /share/magalab/Jill/Depeters/Kneaddata/ --run-fastqc-start --run-fastqc-end
+
+#----------------------------------------------------CutAdapt for demultiplexing----------------------------------------------------------#
+##Demultiplexing R1
+
+#!/bin/bash
+##
+#SBATCH -p production
+#SBATCH --time=10:0:0
+#SBATCH --mem=10G
+#SBATCH -o /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC/cutadapt_anchored.out
+#SBATCH -e /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC/cutadapt_anchored.err
+
+aklog
+cd /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC/
+ulimit -n 1200
+
+time cutadapt -g file:barcodes_new.fa -G file:barcodes_new.fa --error-rate=0 --no-indels --untrimmed-o no_barcodes_R1.fastq.gz --untrimmed-p no_barcodes_R2.fastq.gz -o {name}_R1.fastq.gz -p {name}_R2.fastq.gz ../Kneaddata/20161213-MMDR_S1_L001_R1_001_kneaddata_paired_1.fastq ../Kneaddata/20161213-MMDR_S1_L001_R1_001_kneaddata_paired_2.fastq
+
+##Demultiplexing R2
+
+#!/bin/bash
+##
+#SBATCH -p build
+#SBATCH --time=10:0:0
+#SBATCH --mem=10G
+#SBATCH -o /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC_R2D/cutadapt_anchored.out
+#SBATCH -e /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC_R2D/cutadapt_anchored.err
+
+aklog
+cd /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC_R2D/
+ulimit -n 1200
+
+time cutadapt -G file:../CutAdapt_TrimmedBC/barcodes_new.fa -g file:../CutAdapt_TrimmedBC/barcodes_new.fa --error-rate=0 --no-indels --untrimmed-p no_barcodes_R1.fastq.gz --untrimmed-o no_barcodes_R2.fastq.gz -p {name}_R1_R2D.fastq.gz -o {name}_R2_R2D.fastq.gz ../Kneaddata/20161213-MMDR_S1_L001_R1_001_kneaddata_paired_2.fastq ../Kneaddata/20161213-MMDR_S1_L001_R1_001_kneaddata_paired_1.fastq
+
+#----------------------------------------------------CutAdapt to trim off primers and barcodes------------------------------------------#
+##Trimming off primers from reads demultiplexed based on barcodes on R1 reads 
+
+for f in /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC/*_R1.fastq.gz
+do
+	fname=$(basename $f _R1.fastq.gz)
+	echo $fname
+	echo "#!/bin/bash" > $fname.CutAdapt.sh
+	echo "##" >> $fname.CutAdapt.sh
+	echo "#SBATCH -p production" >> $fname.CutAdapt.sh
+	echo "#SBATCH --mem=10G" >> $fname.CutAdapt.sh
+	echo "#SBATCH --time=18:0:0" >> $fname.CutAdapt.sh
+	echo "#SBATCH -o /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC/Error_Out/${fname}_trim_cutadapt.out" >> $fname.CutAdapt.sh
+	echo "#SBATCH -e /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC/Error_Out/${fname}_trim_cutadapt.err" >> $fname.CutAdapt.sh
+	echo "cd /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC/No_Prime/" >> $fname.CutAdapt.sh
+	echo "time cutadapt -g ^GTGTGCCAGCMGCCGCGGTAA -G ^GGACTACHVGGGTWTCTAAT -o ${fname}_Trim_R1.fastq.gz -p ${fname}_Trim_R2.fastq.gz ../${fname}_R1.fastq.gz ../${fname}_R2.fastq.gz" >> $fname.CutAdapt.sh
+sbatch $fname.CutAdapt.sh
+done
+##Trimming off primers from reads demultiplexed based on barcodes on R2 reads 
+
+for f in /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC_R2D/*_R1_R2D.fastq.gz
+do
+	fname=$(basename $f _R1_R2D.fastq.gz)
+	echo $fname
+	echo "#!/bin/bash" > $fname.CutAdapt.sh
+	echo "##" >> $fname.CutAdapt.sh
+	echo "#SBATCH -p production" >> $fname.CutAdapt.sh
+	echo "#SBATCH --mem=10G" >> $fname.CutAdapt.sh
+	echo "#SBATCH --time=18:0:0" >> $fname.CutAdapt.sh
+	echo "#SBATCH -o /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC_R2D/Error_Out/${fname}_trim_cutadapt.out" >> $fname.CutAdapt.sh
+	echo "#SBATCH -e /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC_R2D/Error_Out/${fname}_trim_cutadapt.err" >> $fname.CutAdapt.sh
+	echo "cd /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC_R2D/No_Prime/" >> $fname.CutAdapt.sh
+	echo "time cutadapt -g ^GTGTGCCAGCMGCCGCGGTAA -G ^GGACTACHVGGGTWTCTAAT -p ${fname}_Trim_R1.fastq.gz -o ${fname}_Trim_R2.fastq.gz ../${fname}_R2_R2D.fastq.gz ../${fname}_R1_R2D.fastq.gz" >> $fname.CutAdapt.sh
+sbatch $fname.CutAdapt.sh
+done
+e
+#--------------------------------------------------------Concatonating ---------------------------------------------------------------#
+for f in /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC_R2D/No_Prime/*_Trim_R1.fastq.gz
+do
+	fname=$(basename $f _Trim_R1.fastq.gz)
+	echo $fname
+	echo "#!/bin/bash" > $fname.CC.sh
+	echo "##" >> $fname.CC.sh
+	echo "#SBATCH -p production" >> $fname.CC.sh
+	echo "#SBATCH --mem=10G" >> $fname.CC.sh
+	echo "#SBATCH --time=1:0:0" >> $fname.CC.sh
+	echo "#SBATCH -o /share/magalab/Jill/Depeters/CutAdapt_Trimmed_CC/Error_Out/${fname}_cc_cutadapt.out" >> $fname.CC.sh
+	echo "#SBATCH -e /share/magalab/Jill/Depeters/CutAdapt_Trimmed_CC/Error_Out/${fname}_cc_cutadapt.err" >> $fname.CC.sh
+	echo "cd /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC_R2D/No_Prime/" >> $fname.CC.sh
+	echo "time cat ${fname}_Trim_R1.fastq.gz ../../CutAdapt_TrimmedBC/No_Prime/${fname}_Trim_R1.fastq.gz >> ../../CutAdapt_Trimmed_CC/${fname}_Trim_R1_CC.fastq.gz" >> $fname.CC.sh
+	echo "time cat ${fname}_Trim_R2.fastq.gz ../../CutAdapt_TrimmedBC/No_Prime/${fname}_Trim_R2.fastq.gz >> ../../CutAdapt_Trimmed_CC/${fname}_Trim_R2_CC.fastq.gz" >> $fname.CC.sh
+sbatch $fname.CC.sh
+done
