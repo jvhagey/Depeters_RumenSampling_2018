@@ -1,0 +1,1691 @@
+---
+title: "Depeters Study 2018"
+author: "Jill Hagey"
+date: "Started: 10/5/18, Completed: 2/3/19"
+output: 
+  html_document:
+    theme: spacelab 
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    df_print: paged
+    highlight: espresso
+---
+
+#Research questions
+The primary goal of this study was a comparison of grab sample, stomach tubing and feces to understand how different sampling methods will effect the microbial communities found in samples. The current "gold standard" for surveying the rumen microbiome is with a grab sample from the rument that contains both liquid and solid particles. On a commercial dairy, fecal sampling is easy to do. Stomach tube could be done with a little more time. If a fecal sample is not representative of the stomach tube, then there is no sense doing the fecal sampling as a monitor for rumen conditions.  In reality, if the stomach tube and the fecal sample do not reflect the grab sample (gold standard) then neither would be used to monitor rumen microbial health (populations).
+
+###We seek to answer the following questions:
+* How are sample types different?
+    + Alpha diversity (richness and evenness)
+    + Beta diversity
+    + Differentially abundant and differentially variable ASVs.
+* What ASVs are shared between samples of the same type.
+
+A secondary question is the decomposition of the grab sample (liquid strained & solid). The grab sample was separated into liquid strained and solid particulate by pressing the grab sample through cheese cloth to get liquid strained and solid particulate. We will have a closer look at what communites are in what parts of the grab sample.
+
+###Other Questions of interest:
+* Have a look at the feed microbiome from the two different kits (TMR_plant_kit and TMR_fecal_kit) to see if there is a relationship between the feed and sample type.
+* Typically, the liquid unstrained is what we would collect from a rumen fistulated cow and then transfaunate using a stomach tube into a sick cow that is experiencing simple indigestion. How does the microbial population of the liquid unstrained compared with the grab sample, liquid strained, and solid? That is to say, when we transfaunate what mircrobial populations are we transfering.
+* How constant is the rumen population over time in the same animal?
+    + **This can't be tested as we only have one sample per day and thus can estimate variations on a day** 
+* There is one Jersey in the study is her microbiome different from the holstiens? 
+    + **We can't really answer this as we only have an n=1**
+
+```{r setup, echo=FALSE, include=FALSE, warning=FALSE}
+#Setting working directory. Pick One
+#Use this one for lab computer
+#setwd("C:/Users/jvhagey/OneDrive - UC Davis/Documents/collaboration/Depeters/DADA2_Out/Demultiplex_Redo/")
+#Just a bit of house keeping to set the working directory
+#knitr::opts_knit$set(root.dir = "C:/Users/jvhagey/OneDrive - UC Davis/Documents/collaboration/Depeters/DADA2_Out/Demultiplex_Redo/")
+#knitr::opts_chunk$set(echo = FALSE, warning=FALSE)
+#Use thigs one for my own computer
+setwd("C:/Users/jvhagey/OneDrive - UC Davis/Documents/collaboration/Depeters/DADA2_Out/Demultiplex_Redo/")
+#Just a bit of house keeping to set the working directory
+knitr::opts_knit$set(root.dir = "C:/Users/jvhagey/OneDrive - UC Davis/Documents/collaboration/Depeters/DADA2_Out/Demultiplex_Redo/")
+
+#Use thigs one for my own computer
+#setwd("C:/Users/jvhagey/OneDrive - UC Davis/Documents/collaboration/Depeters/DADA2_Out/Demultiplex_Redo/")
+#Just a bit of house keeping to set the working directory
+#knitr::opts_knit$set(root.dir = "C:/Users/jvhagey/OneDrive - UC Davis/Documents/collaboration/Depeters/DADA2_Out/Demultiplex_Redo/")
+getwd()
+```
+
+```{r loading packages, include=FALSE, error=FALSE, warning=FALSE}
+#load the packages
+library(dada2); packageVersion("dada2")
+library(phyloseq); packageVersion("phyloseq")
+library(breakaway); packageVersion("breakaway")
+library(DivNet); packageVersion("DivNet")
+library(corncob); packageVersion("corncob")
+library(structSSI); packageVersion("structSSI")
+library(ggplot2); packageVersion("ggplot2")
+library(reshape2); packageVersion("reshape2")
+library(DESeq2); packageVersion("DESeq2")
+library(plotly); packageVersion("plotly")
+library(dplyr); packageVersion("dplyr")
+library(tibble); packageVersion("tibble")
+library(doSNOW); packageVersion("doSNOW")
+library(knitr); packageVersion("knitr")
+library(tidyr); packageVersion("tidyr")
+library(kableExtra); packageVersion("kableExtra")
+```
+
+Note that prior to running DADA2 sequences were cleaned with kneaddata and then demuliplexed and primers trimmed with cuteadapt. Code for this is available at my [GitHub Page](https://github.com/jvhagey/Depeters_RumenSampling_2018/blob/master/Clean_Up)
+
+#Running DADA2 to get ASVs and assign taxonomy.
+
+This program infers exact amplicon sequence variants (ASVs) from amplicon data, resolving biological differences of even 1 or 2 nucleotides. This algorithum is prefered as DADA2 reports fewer false positive sequence variants than other methods report false OTUs. Note that this is a computationally expensive so its run on a cluster and then the R objects are read in. 
+
+First we will read in the data and trim ends where there is poor quality.
+
+```{r Running DADA2, eval=FALSE, include=TRUE}
+# CHANGE ME to the directory containing the fastq files after unzipping.
+path <- "C:/Users/jvhagey/Desktop/Depeters/" 
+list.files(path)
+# Forward and reverse fastq filenames have format: SAMPLENAME_R1_001.fastq and SAMPLENAME_R2_001.fastq
+fnFs <- sort(list.files(path, pattern="_Trim_R1.fastq.gz", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern="_Trim_R2.fastq.gz", full.names = TRUE))
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+plotQualityProfile(fnFs[1:10])
+plotQualityProfile(fnRs[1:10])
+
+#Place filtered files in filtered/subdirectory
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(240,220),trimLeft=c(10,0),
+                     maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE, minLen=150,
+                     compress=TRUE, multithread=FALSE, verbose=TRUE) 
+head(out)
+
+#check quality again after trimming
+plotQualityProfile(filtFs[10:20])
+plotQualityProfile(filtRs[10:20])
+```
+
+The next steps learn the error rates of the data and identifies unique sequences. These data are fed into the main dada2 algorithum that makes a table of ASVs. Reads are merged and chimerias removed prior to making the final ASV table. Taxaonomy was assined using the silva database.
+
+```{r eval=FALSE, include=TRUE}
+#learn erros for DADA2 algorithm
+errF <- learnErrors(filtFs, multithread=FALSE)
+errR <- learnErrors(filtRs, multithread=FALSE)
+
+plotErrors(errF, nominalQ=TRUE)
+
+derepFs <- derepFastq(filtFs, verbose=TRUE)
+derepRs <- derepFastq(filtRs, verbose=TRUE)
+
+# Name the derep-class objects by the sample names
+names(derepFs) <- sample.names
+names(derepRs) <- sample.names
+#run the dada2 algorithum
+dadaFs <- dada(derepFs, err=errF, multithread=FALSE, pool=TRUE)
+dadaRs <- dada(derepRs, err=errR, multithread=FALSE, pool=TRUE)
+#checking output
+dadaFs[[1]]
+#Merging forward and Reverse Reads
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose=TRUE)
+# Inspect the merger data.frame from the first sample
+head(mergers[[1]])
+#Construct Sequence Table
+seqtab <- makeSequenceTable(mergers)
+dim(seqtab)
+#Removing chimeras
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=FALSE, verbose=TRUE)
+dim(seqtab.nochim)
+#
+taxa_rdp <- assignTaxonomy(seqtab.nochim, "/share/tearlab/Maga/Jill/rdp_train_set_16.fa.gz", multithread=TRUE)
+saveRDS(taxa_rdp, "/share/tearlab/Maga/Jill/16s_Milk_2016/DADA2/taxa_rdp.rds")
+taxa.sp_rdp <- addSpecies(taxa_rdp, "/share/tearlab/Maga/Jill/rdp_species_assignment_16.fa.gz")
+saveRDS(taxa.sp_rdp, "/share/tearlab/Maga/Jill/16s_Milk_2016/DADA2/taxa.sp_rdp.rds")
+#
+taxa_silva <- assignTaxonomy(seqtab.nochim, "/share/tearlab/Maga/Jill/silva_nr_v132_train_set.fa.gz", multithread=TRUE)
+saveRDS(taxa_silva, "/share/tearlab/Maga/Jill/16s_Milk_2016/DADA2/taxa_silva.rds")
+taxa.sp_silva <- addSpecies(taxa_silva, "/share/tearlab/Maga/Jill/silva_species_assignment_v132.fa.gz")
+saveRDS(taxa.sp_silva, "/share/tearlab/Maga/Jill/16s_Milk_2016/DADA2/taxa.sp_silva.rds")
+```
+
+Getting information out of DADA2 Objects.
+
+```{r Getting info out of DADA2, eval=FALSE, include=TRUE}
+#making and writing out a fasta of our final ASV seqs:
+#This fasta will also be used for making a tree...
+asv_fasta <- c(rbind(asv_headers, asv_seqs))
+write(asv_fasta, "ASVs.fa")
+#count table:
+asv_tab <- t(seqtab.nochim)
+row.names(asv_tab) <- sub(">", "", asv_headers)
+write.table(asv_tab, "ASVs_counts.txt", sep="\t", quote=F)
+#tax table:
+asv_tax <- sil_taxa.sp
+row.names(asv_tax) <- sub(">", "", asv_headers)
+write.table(asv_tax, "ASVs_taxonomy.txt", sep="\t", quote=F)
+```
+
+Let's check the sizes of the sequences as a way to determine contamination.
+
+```{r}
+seqtab.nochim <- readRDS("seqtab.nochim.rds")
+#Inspect distribution of sequence lengths
+table(nchar(getSequences(seqtab.nochim)))
+```
+
+These sequences fall in the range of ~390bp. The sequences longer sequences may be the result of non-specific priming. We will look at this again after specific and thoughtful filtering. If long sequences remain after filtering we will look at them closer to make sure they are infact from bacterial origin. 
+
+Now we check the number of chimeras in the dataset.
+
+```{r DADA2 chimeria stats}
+seqtab <- readRDS("seqtab.rds")
+#checking Frequency of chimeras
+sum(seqtab.nochim)/sum(seqtab)
+```
+
+Here we see that 2.05% of the sequences were identified to be chimerias and were removed from the dataset. Next, we will have a look at the read stats.
+
+```{r DADA2 stats, eval=TRUE}
+##Examining the stats of read count to through the pipeline.
+#I still need to add in sample names
+dadaFs <- readRDS("dadaFs.rds")
+dadaRs <- readRDS("dadaRs.rds")
+mergers <- readRDS("mergers.rds")
+out <- readRDS("out.rds")
+#Tracking read count through pipeline
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+track
+```
+
+This shows the library sizes of the samples and how many reads were removed at each step. We will now get read stats for the input ASVs.
+
+```{r}
+#Get info on depth of sequecing for samples
+data.frame("Min" = min(track[,"input"]),"Max" = max(track[,"input"]),"Mean" = mean(track[,"input"]),
+           "Range" = range(track[,"input"]), "median" = median(track[,"input"]))
+```
+
+We compare this to the read stats for the final libraries.
+
+```{r}
+#Get info on depth of sequecing for samples
+data.frame("Min" = min(track[,"nonchim"]),"Max" = max(track[,"nonchim"]),"Mean" = mean(track[,"nonchim"]),
+           "Range" = range(track[,"nonchim"]), "Median" = median(track[,"nonchim"]))
+```
+
+##Making phyloseq object
+
+```{r Making phyloseq object}
+asv_tab <- readRDS("asv_tab.rds")
+asv_tax <- readRDS("asv_tax.rds") 
+#had the following taxa that rdp didn't Entotheonellaeota, Epsilonbacteraeota, Gemmatimonadetes, Kiritimatiellaeota, Patescibacteria, BRC1 it doesn't have SR1 or Candidatus_Saccharibacteria though
+TREE <- read_tree("dada2_seqs.tre")
+MAP <- import_qiime_sample_data("C:/Users/jvhagey/OneDrive - UC Davis/Documents/collaboration/Depeters/Mapping_File_MMDR.txt")
+ps <- phyloseq(otu_table(asv_tab, taxa_are_rows=TRUE), sample_data(MAP), tax_table(asv_tax), phy_tree(TREE))
+sample_data(ps)$Sample_Type <- gsub("_"," ",sample_data(ps)$Sample_Type)
+sample_data(ps)$CowID <- paste0("Cow_", sample_data(ps)$CowID) #corncob doesn't like numbers for factors
+ps
+```
+
+#Cleaning data
+Currently, we are starting with 5,607 ASVs from 70 samples
+
+```{r}
+ps_kit <- ps
+ps <- subset_samples(ps, Sample_Type != c("TMR fecal kit"))
+ps <- subset_samples(ps, Sample_Type != c("TMR plant kit"))
+ps
+```
+
+First, we remove the kit samples to bring us down to 68 samples. We will look at these again later.
+
+```{r Removing empty ASVs}
+#Checking for empty samples, samples with no taxa assoicated with them (should be "FALSE").
+any(sample_sums(ps) == 0)
+#Checking if there are ASVs that aren't present in any samples (should be "FALSE")
+any(taxa_sums(ps) == 0)
+#Determining how many ASVs there are that aren't present in any sample
+sum(taxa_sums(ps) == 0)
+#removing ASVs that aren't present in any samples
+ps <- prune_taxa(taxa_sums(ps) > 0, ps)
+ps
+```
+
+There was no empty samples or taxa which is what we want. Also, there was 16 ASVs that weren't in any sample and were removed.
+
+#More cleaning of data
+
+```{r}
+#Create table, number of features for each phyla
+table(tax_table(ps)[, "Phylum"], exclude = NULL)
+#Removing ambiguous phylum annotation
+#This changes ASVs from 5,591 to 5,452
+ps <- subset_taxa(ps, !is.na(Phylum) & !Phylum %in% c("", "uncharacterized"))
+ps
+```
+
+There was 95 AVSs that weren't assigned to a phyla so these were be removed for analysis. This leaves 5,496 ASVs.
+
+Next we removing phyla that are assigned to Archaea and Eukaryotes as these are not suppose to be amplified by the primer pair.
+
+```{r Remove nonprimed}
+#removing phyla that are assigned to archea and Eukaryotes as these are not suppose to be amplified by the primer pair
+#Define phyla to filter
+filterPhyla <- c("Euryarchaeota","Euglenozoa")
+ps <- subset_taxa(ps, !Phylum %in% filterPhyla)
+ps
+```
+
+After filtering out Eukaryotes we have 5,452 ASVs left.
+
+```{r}
+#Compute prevalence of each feature, store as data.frame
+#prevalence in the dataset we will define here as the number of samples in which a taxon appears at least once
+prevdf = apply(X = otu_table(ps),
+               MARGIN = ifelse(taxa_are_rows(ps), yes = 1, no = 2),
+               FUN = function(x){sum(x > 0)})
+#Add taxonomy and total read counts to this data.frame
+prevdf = data.frame(Prevalence = prevdf, TotalAbundance = taxa_sums(ps), tax_table(ps))
+#display table
+plyr::ddply(prevdf, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
+```
+
+Here we see that Deferribacteres and Gemmatimonadetes ASVs only has one feature so we'll just looking into this real quick.
+
+```{r Explore phyla, warning=FALSE}
+#Making phyloseq object with Gemmatimonadetes
+ps_explore <- subset_taxa(ps, Phylum == c("Gemmatimonadetes"))
+ps_explore <- prune_samples(sample_sums(ps_explore) > 0, ps_explore)
+ps_explore@sam_data$Sample_Type
+
+#Making phyloseq object with Deferribacteres
+ps_explore <- subset_taxa(ps, Phylum == c("Deferribacteres"))
+ps_explore <- prune_samples(sample_sums(ps_explore) > 0, ps_explore)
+ps_explore@sam_data$Sample_Type
+```
+
+The phylum Deferribacteres are only in Fecal samples and and Gemmatimonadetes are only in Stomach Tube samples. This suggest these groups might be important for comparing sample types, thus we will leave reads assigned to these phyla in the dataset despite their low prevelance.
+
+Lastly, we'll check to see if chloroplasts are in the data set.
+
+```{r Remove chloroplast}
+#removing phyla that are assigned to chloroplasts
+tax_table(subset_taxa(ps, Order == "Chloroplast"))
+ps <- subset_taxa(ps, !Order %in% "Chloroplast")
+ps
+```
+
+After removing chloroplasts there is 5,443 ASVs left.
+
+#Looking at metrics after filtering
+
+```{r}
+#number of taxa present
+ntaxa(ps)
+#checking names of taxa present at specific rank
+length(get_taxa_unique(ps, "Phylum"))
+length(get_taxa_unique(ps, "Order"))
+length(get_taxa_unique(ps, "Family"))
+length(get_taxa_unique(ps, "Genus"))
+```
+
+As we have seen previously, there are 5,443 ASVs in the dataset. This is composed of 20 phyla, 74 Orders, 114 Families and 292 Genera.
+
+```{r Counting Singletons}
+#How many singletons are there? How many doubletons?
+singletons <- sum(rowSums(ps@otu_table@.Data)==1) #number of singletons
+doubletons <- sum(rowSums(ps@otu_table@.Data)==2) #number of doubletons
+tripletons <- sum(rowSums(ps@otu_table@.Data)==3) #number of tripletons
+sum(singletons,doubletons,tripletons)
+```
+
+Looks like there are 87 singletons, doubletons or tripletons. This looks pretty good (Not excessive) and we need these for diversity metrics. 
+
+For the last part of our cleaning process we will graph out the prevalance of ASVs assigned to each phylum.
+
+```{r Graph phyla}
+#Subset to the remaining phyla
+prevdf1 = subset(prevdf, Phylum %in% get_taxa_unique(ps, "Phylum"))
+ggplot(prevdf1, aes(TotalAbundance, Prevalence / nsamples(ps),color=Phylum)) +
+#Include a guess for parameter
+  geom_hline(yintercept = 0.05, alpha = 0.5, linetype = 2) +  geom_point(size = 2, alpha = 0.7) +
+  scale_x_log10() +  xlab("Total Abundance") + ylab("Prevalence [Frac. Samples]") +
+  facet_wrap(~Phylum) + theme(legend.position="none")
+```
+
+#Rechecking read stats
+
+Before moving on we will look again at the read stats to check that we still don't have reads that are too long in the dataset.
+
+```{r Rechecking stats, echo=FALSE}
+taxa_sp <- readRDS("C:/Users/Jill/OneDrive - UC Davis/Documents/collaboration/Depeters/DADA2_Out/Demultiplex_Redo/sil_tax_sp_final.rds")
+ps2 <- phyloseq(otu_table(seqtab.nochim, taxa_are_rows=FALSE), sample_data(MAP), tax_table(taxa_sp))
+ps2 <- prune_taxa(taxa_sums(ps2) > 0, ps2)
+ps2 <- subset_taxa(ps2, !Phylum %in% filterPhyla)
+ps2 <- subset_taxa(ps2, !is.na(Phylum) & !Phylum %in% c("", "uncharacterized"))
+ps2
+```
+
+```{r Rechecking stats output}
+#Getting our seqs out
+asv_seqs2 <- colnames(otu_table(ps2))
+#Inspect distribution of sequence lengths
+table(nchar(getSequences(asv_seqs2)))
+```
+
+Looks like we now only have samples less than 300bp, which is to be expected.
+
+#Abundance of Phyla
+
+```{r warning=FALSE}
+#combing by phyla and then making into relative abundance
+ps_phyla <- tax_glom(ps, "Phylum")
+#Making relative
+ps_phyla_rel <- transform_sample_counts(ps_phyla, function(x) 100*(x/sum(x)))
+
+#calculating error bars to graph mean transformed abundance of major phyla
+melted <- psmelt(ps_phyla_rel)
+grouped <- dplyr::group_by(melted, Sample_Type, Phylum)
+phyla <- as.data.frame(dplyr::summarise(grouped, mean=mean(Abundance), sd=sd(Abundance), sem = (sd(Abundance)/sqrt(length(Abundance)))))
+#Ordering
+phyla <- phyla[order(-phyla$mean),]
+phyla[,3:5] <- format(phyla[,3:5], digits = 3)
+kable(phyla, caption="Statistiscs for Abundance of Phyla") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), font_size = 10) %>%
+  scroll_box(width = "100%", height = "300px")
+```
+
+These are the phyla found in all samples sorted by decending order of mean relative abundance. Next we will graph out some of the different phyla based on their abundance ranges.
+
+```{r warning=FALSE}
+#Which phyla are present at greater than 5% relative abundance
+lfive <- as.list(as.character(unique(phyla[which(phyla$mean > 3),]$Phylum)))
+five <-subset_taxa(ps_phyla_rel, Phylum== lfive[[1]] | Phylum== lfive[[2]] | Phylum==lfive[[3]] | Phylum==lfive[[4]] | Phylum==lfive[[5]])
+#calculating error bars to graph mean transformed abundance of major phyla
+melted <- psmelt(five)
+grouped <- dplyr::group_by(melted, Sample_Type, Phylum)
+phyla_five <- as.data.frame(dplyr::summarise(grouped, mean=mean(Abundance), sd=sd(Abundance), sem = (sd(Abundance)/sqrt(length(Abundance)))))
+
+#Plotting relative abundance
+ggplot(phyla_five, aes(x=Sample_Type, y=mean, fill= Phylum))+
+  geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position=position_dodge(), width=0.5)+
+  geom_errorbar(aes(ymin=mean-sem, ymax=mean+sem),width=.2, position=position_dodge())+
+  geom_abline(intercept = 0, slope = 0)+
+  theme_bw()+
+  facet_grid(Phylum ~ .,labeller = label_parsed, scales="free", space="free_x")+
+  theme(legend.position="none",axis.text.x=element_text(angle=305,face = "bold"),strip.text.y=element_text(angle=0,face = "bold"),strip.text.x=element_text(angle=0,face = "bold"), axis.text= element_text(face = "bold"), axis.title=element_text(face = "bold"), panel.grid.major.x = element_blank(),panel.grid.minor.y=element_blank())+
+  labs(x="Sample Type", y="Average Relative Abundance")
+```
+
+This is a graph of the major phyla, defined as those present at an abundance greater than 3% relative abundance, in rumen samples. Next we will graph phyla less than 3% relative abundance.
+
+```{r warning=FALSE}
+#Which phyla are present at greater than 10% relative abundance
+p1 <- c(get_taxa_unique(five, "Phylum"))
+p2 <- as.character(unique(phyla$Phylum))
+low <-  as.list(setdiff(p2,p1))
+low <-subset_taxa(ps_phyla_rel, Phylum==low[[1]] | Phylum==low[[2]] | Phylum==low[[3]] | Phylum==low[[4]] | Phylum==low[[5]] | Phylum==low[[6]] | Phylum==low[[7]] | Phylum==low[[8]] | Phylum==low[[9]] | Phylum==low[[10]] | Phylum==low[[11]] | Phylum==low[[12]] | Phylum==low[[13]] | Phylum==low[[14]] | Phylum==low[[15]])
+#reformating data
+melted <- psmelt(low)
+grouped <- dplyr::group_by(melted, Sample_Type, Phylum)
+phyla_low <- as.data.frame(dplyr::summarise(grouped, mean=mean(Abundance), sd=sd(Abundance), sem = (sd(Abundance)/sqrt(length(Abundance)))))
+
+#Bubble graph
+ggplot(phyla_low, aes(x=Sample_Type , y = Phylum , size = mean)) %>%
+      + geom_point(aes(color=Sample_Type)) + 
+  guides(color=FALSE) +
+    theme(axis.text.x=element_text(angle=315),strip.text=element_text(face = "bold"), axis.text= element_text(face = "bold"), axis.title=element_text(face = "bold"), legend.text=element_text(face = "bold"), legend.title=element_text(face = "bold")) +
+  labs(x="Sample Type", color = "Sample Type", size = "Mean Percent \n Abundance")
+  labs(size = "Mean Abundance", x="Sample Type")
+```
+
+This is a graph of the "minor" phyla, defined as present at an abundance below 3%, in rumen samples. Next we are going to do some exploratory analysis of all sample types.
+
+#Examining data for unsupervised exploratory analysis
+
+```{r qplot}
+qplot(log10(rowSums(otu_table(ps))),binwidth=0.2) +
+  xlab("Logged counts-per-sample")
+```
+
+Going to use log transformations for normalizing for library size during exploratory analysis. As this looks appropraite for the "tailed" data. For addtional confirmation we could do a the same analysis on ranked values for abundance.
+
+```{r Bray-Curtis distance}
+set.seed(1850)
+#bray curtis distance
+pslog <- transform_sample_counts(ps, function(x) log(1 + x))
+out.pcoa.log <- ordinate(pslog,  method = "MDS", distance = "bray")
+evals <- out.pcoa.log$values[,1]
+plot_ordination(pslog, out.pcoa.log, color = "Sample_Type") +
+  labs(col = "Sample Type")+
+  coord_fixed(sqrt(evals[2] / evals[1]))
+```
+
+The fecal samples pull away from the other samples on the first axis. Liquid strained and unstrained samples move higher on the 2nd axis, but this difference is 1/5th that of the differences between fecal samples and all other samples. Overall, it appears that there is 2-3 "clusters". Next we will ordinate unifrac distances which will take into account phylogenetic differeces in differences in samples. 
+
+```{r Weighted Eigenvalues, warning=FALSE}
+set.seed(1850)
+#weighted unifrac
+out.wuf.log <- ordinate(pslog, method = "MDS", distance = "wunifrac")
+evals <- out.wuf.log$values$Eigenvalues
+eval_per_wuf <- (out.wuf.log$values$Eigenvalues/(sum(out.wuf.log$values$Eigenvalues)))*100
+#Plotting eigenvalues to determine how many axis should be shown in graph
+barplot(eval_per_wuf[1:10],names.arg=paste0('Eigenvalue',1:10), ylab="Percent of explained variances", col="blue")
+```
+
+From the eigenvalues we can see that 2 axis is appropriate for graphing, together explaining almost 80% of the variance between the samples. 
+
+```{r Plot weighted}
+plot_ordination(pslog, out.wuf.log, color = "Sample_Type") +
+  labs(col = "Sample Type", title="Weighted Unifrac") +
+  coord_fixed(sqrt(evals[2] / evals[1]))
+```
+
+Now that we take into account phylogenetic information in the distance metric we see a similar clustering pattern as with the bray-curtis. However, now the difference between fecal and other samples on the 1st axis explain 63.8% of the variation. Also, although not quite as clean there still seems like there is 3 "clusters". If you didn't have stomach tube samples this would be more clear. Grab sample and solid samples aren't very different from each other. 
+
+Next I will look futher into the phyla that are driving this differences.
+
+```{r Plot weighted phyla}
+#ploting same weighted unifrac with phyla colored
+plot_ordination(pslog, out.wuf.log, type = "species", color = "Phylum") +
+  coord_fixed(sqrt(evals[2] / evals[1]))
+```
+
+As firmicutes, not surprisingly, are covering the entire graph so we remove the Firmicutes and have a second look at this. Also, it looks like there are distinct Firmicutes in the feces vs the rumen samples.
+
+```{r Plot weighted phyla2}
+#Removing Firmicutes to visulaize other phyla
+ps_NoFirm = subset_taxa(pslog, Phylum != c("Firmicutes"))
+pslog_NoFirm <- transform_sample_counts(ps_NoFirm, function(x) log(1 + x))
+out.wuf.log.NoFirm <- ordinate(pslog_NoFirm, method = "MDS", distance = "wunifrac")
+evals_NoFirm <- out.wuf.log.NoFirm$values$Eigenvalues
+#ploting same weighted unifrac with phyla colored
+plot_ordination(pslog_NoFirm, out.wuf.log.NoFirm, type = "species", color = "Phylum") +
+  coord_fixed(sqrt(evals_NoFirm[2] / evals_NoFirm[1]))
+
+#Removing Bacteroidetes to visulaize other phyla
+ps_NoMain = subset_taxa(ps_NoFirm, Phylum != c("Bacteroidetes"))
+pslog_NoMain <- transform_sample_counts(ps_NoMain, function(x) log(1 + x))
+out.wuf.log.NoMain <- ordinate(pslog_NoMain, method = "MDS", distance = "wunifrac")
+evals_NoMain <- out.wuf.log.NoMain$values$Eigenvalues
+#ploting same weighted unifrac with phyla colored
+plot_ordination(pslog_NoMain, out.wuf.log.NoMain, type = "species", color = "Phylum") +
+  coord_fixed(sqrt(evals_NoMain[2] / evals_NoMain[1]))
+```
+
+Now that the Firmicutes are removed from the graph the data suggest that most of the varitation (1st axsis) comes from Bacteroidetes different ASVs are primarily driving the distances on the 1st axis. 
+
+The second axis in part is driven by Actinobacteria - maybe Fibrobacteria as well - (samples higher on the 2nd axis) and Kiritimatiellaeota or Cyanobacteria (samples lower on the 2nd axis).
+
+We will come back to examining these differences further during differential abundance testing.
+
+For good measure we will look at the unweighted unifrac that puts more weight on rare species as well. 
+
+We'll first let's check on the eigenvalues.
+
+```{r Unweighted Eigenvalues}
+out.unwuf.log <- ordinate(pslog, method = "MDS", distance = "unifrac")
+eval_per_unwuf <- (out.unwuf.log$values$Eigenvalues/(sum(out.unwuf.log$values$Eigenvalues)))*100
+#Plotting eigenvalues to determine how many axis should be shown in graph
+barplot(eval_per_unwuf[1:10],names.arg=paste0('Eigenvalue',1:10), ylab="Percent of explained variances", col="blue")
+```
+
+The eigenvalues here show 2 axis are sufficient to capture most of the total variation.
+
+```{r Unweighted plot}
+#UnWeighted unifrac
+evals_un <- out.unwuf.log$values$Eigenvalues
+plot_ordination(pslog, out.unwuf.log, color = "Sample_Type") +
+  labs(col = "Sample Type", title="Unweighted unifrac") +
+  coord_fixed(sqrt(evals_un[2] / evals_un[1]))
+```
+
+Notice that less of the variation is explained in each axis with the unweighted versus the weighted unifrac. The distances between points aren't as great with the unweighted versus weighted unifrac, thus it seems that the difference between sample types is due to abundance differences and less about differences in species. The fecal samples are clustered closer together than with the weighted unifrac.
+
+Another way to comparing phylogentic differences is double principal coordinates analysis (DPCoA), which is a phylogenetic ordination method and that provides a biplot representation of both samples and taxonomic categories. The computational time for this is much longer than with the unifrac (i.e. Has to be run on a server).
+```{r}
+out.DP.log <- ordinate(pslog, method = "DPCoA") #default distance is bray
+eval_per_DP <- (out.DP.log$values$Eigenvalues/(sum(out.DP.log$values$Eigenvalues)))*100
+#Plotting eigenvalues to determine how many axis should be shown in graph
+barplot(eval_per_DP[1:10],names.arg=paste0('Eigenvalue',1:10), ylab="Percent of explained variances", col="blue")
+```
+
+The eigenvalues here show 2 axis are sufficient to capture most of the total variation.
+
+```{r Unweighted plot}
+
+#UnWeighted unifrac
+evals_un <- out.DP.log$values$Eigenvalues
+plot_ordination(pslog, out.DP.log, color = "Sample_Type") +
+  labs(col = "Sample Type", title="DPCoA of Bary distance") +
+  coord_fixed(sqrt(evals_un[2] / evals_un[1]))
+```
+
+#Shared ASVs between sample types.
+
+```{r Core}
+#making subsets of sample types to determine oore
+LUS <- subset_samples(ps, Sample_Type == c("Liquid Unstrained"))
+LS<- subset_samples(ps, Sample_Type == c("Liquid Strained")) 
+Feces <- subset_samples(ps, Sample_Type == c("Feces")) 
+Solid <- subset_samples(ps, Sample_Type == c("Solid")) 
+ST <- subset_samples(ps, Sample_Type == c("Stomach Tube")) 
+GS <- subset_samples(ps, Sample_Type == c("Grab Sample")) 
+#making a list to determine core of each subset
+Subsets <- list(GS, Solid, Feces, ST, LUS, LS)
+names(Subsets) <-c("Grab Sample", "Solid", "Feces", "Stomach Tube", "Liquid Unstrained", "Liquid Strained")
+Subsets <- lapply(Subsets, function(Subsets) prune_taxa(taxa_sums(Subsets) > 0, Subsets))
+Cores <- lapply(Subsets, function(Subsets) filter_taxa(Subsets, function(x) sum(x >= 1) > (0.99*length(x)), TRUE))
+Cores
+```
+
+Liquid unstrained samples have 312 ASVs in common. Liquid strained samples have 397 ASVs in common. Samples from feces have 438 ASVs in common with one another. Soild samples have 248 ASVs in common. Samples from a stomach tube have 501 ASVs in common. Grab samples have 301 ASVs in common.
+
+#Differential Abundance Testing
+
+##Hierarchical Multiple Testing
+Here we will exploit the structure in our hypothesis testing that certain taxa are differentailly abundant in different sample types. We use a hierarchical testing procedure, where taxonomic groups are only tested if higher levels are found to be associated with a sample type. In the case where many related species have a slight signal, this pooling of infomratin can increase our power. We will first use a variance stabilization method on our data before testing. After testing P-vaules are corrected for FDR. 
+
+```{r}
+library(DESeq2); packageVersion("DESeq2")
+sample_data(ps)$Sample_Type <- gsub(" ","_",sample_data(ps)$Sample_Type)
+
+ps_dds <- phyloseq_to_deseq2(ps, design = ~ Sample_Type)
+
+# geometric mean, set to zero when all coordinates are zero
+geo_mean_protected <- function(x) {
+  if (all(x == 0)) {
+    return (0)
+  }
+  exp(mean(log(x[x != 0])))
+}
+
+geoMeans <- apply(counts(ps_dds), 1, geo_mean_protected)
+ps_dds <- estimateSizeFactors(ps_dds, geoMeans = geoMeans)
+ps_dds <- estimateDispersions(ps_dds,fitType='local')
+abund <- DESeq2::getVarianceStabilizedData(ps_dds)
+detach("package:DESeq2", unload=TRUE)
+```
+
+
+```{r}
+el <- phy_tree(pslog)$edge
+el0 <- el
+el0 <- el0[nrow(el):1, ]
+el_names <- c(rownames(abund), seq_len(phy_tree(pslog)$Nnode))
+el[, 1] <- el_names[el0[, 1]]
+el[, 2] <- el_names[as.numeric(el0[, 2])]
+unadj_p <- treePValues(el, abund, sample_data(pslog)$Sample_Type)
+saveRDS(unadj_p,"unadj_p.rds")
+```
+
+
+```{r}
+unadj_p.rds <- readRDS("unadj_p.rds")
+hfdr_res <- hFDR.adjust(unadj_p, el, .75)
+saveRDS(hfdr_res,"hfdr_res.rds")
+hfdr_res <- readRDS("hfdr_res.rds")
+summary(hfdr_res)
+```
+
+The above line will open a browser with notes shaded according to p-values. 
+
+
+```{r}
+plot(hfdr_res, height= 1000)
+```
+
+
+##Corncob
+
+We test all the taxa in our data to see if they are differentially-abundant or differentially-variable. The differentialTest function will these tests on all taxa, while controlling the false discovery rate to account for multiple comparisons.
+
+```{r Running corncob, eval=FALSE, warning=FALSE}
+#we do not include the response term because we are testing multiple taxa.
+
+#We specify the covariates of our model using formula and phi.formula 
+#We also specify which covariates we want to test for by removing them in the formula_null and phi.formula_null arguments.
+
+# The difference between the formulas and the null version of the formulas
+# will be the variables that are tested. In this case, as when we examined
+# the single taxon, we will be testing the coefficients of Sample Type for
+# both the expected relative abundance and the overdispersion.
+
+# We set fdr_cutoff to be our controlled false discovery rate.
+set.seed(1)
+fullAnalysis <- differentialTest(formula = ~ Sample_Type, phi.formula = ~ Sample_Type,formula_null = ~ Day,
+                                 phi.formula_null = ~ Day, test="Wald",boot=FALSE, data = ps, fdr_cutoff = 0.05)
+```
+
+This was run on a server as it takes several hours to finish, but now that its done lets have a look the the results.
+
+```{r checking results of corncob}
+fullAnalysis <- readRDS("fullAnalysis.rds")
+#counting ASVs in each group
+length(fullAnalysis$DA)
+length(fullAnalysis$DV)
+```
+
+Here we see that Corncob has identified 610 ASVs that are differentailly abundant and 36 ASVs that are differentaially variable.
+
+Let's extract the ASVs and their p-values.
+
+```{r Taxa for DA}
+#getting taxonomy
+DA_taxa <- otu_to_taxonomy(OTU=fullAnalysis$DA, data=ps)
+#Getting p-values of Differentially variable ASVs
+ASVs <- c(row.names(as.data.frame(DA_taxa)))
+df <- as.data.frame(fullAnalysis$p_fdr)
+df <- df[row.names(df) %in% ASVs, ]
+df <- merge(df,as.data.frame(DA_taxa),by=0, all=TRUE) #by=0 means merge by row names
+df <- subset(df, select = c(DA_taxa,DA,Row.names))
+df$ASV <- df$Row.names
+df$Row.names <- NULL
+df$DA <- format(df$DA, digits = 3)
+colnames(df) <- c("Taxa", "p-value", "ASV")
+kable(df[order(df$Taxa),], caption="Differentially Abundant Taxa") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), font_size = 10) %>%
+  scroll_box(width = "100%", height = "300px")
+```
+
+These are taxa that are differentailly **abundant** between sample types and their false discovery corrected p-value. ASVs are listed by significance. 
+
+```{r warning=FALSE}
+otu_table(ps)["ASV_48",]
+ASV_48 <- bbdml(formula = ASV_48 ~ Sample_Type, phi.formula = ~ Sample_Type, data=ps)
+```
+
+This is the feature table for ASV_48, let's graph out this most significantly differentially abundant ASV *Romboutsia*. 
+
+```{r}
+plot(ASV_48, color="Sample_Type")
+plot(ASV_48, AA = TRUE, color="Sample_Type")
+```
+
+These graphs show that ASV_48 *Romboutsia* is in higher abundance in fecal samples. 
+
+```{r}
+#getting taxonomy
+DV_taxa <- otu_to_taxonomy(OTU=fullAnalysis$DV, data=ps)
+#Getting p-values of Differentially variable ASVs
+ASVs <- c(row.names(as.data.frame(DV_taxa)))
+df <- as.data.frame(fullAnalysis$p_fdr)
+df <- df[row.names(df) %in% ASVs, ]
+df <- merge(df,as.data.frame(DV_taxa),by=0, all=TRUE) #by=0 means merge by row names
+df <- subset(df, select = c(DV_taxa,DV,Row.names))
+df$ASV <- df$Row.names
+df$Row.names <- NULL
+df$DV <- format(df$DV, digits = 3)
+colnames(df) <- c("Taxa", "p-value", "ASV")
+kable(df[order(df$Taxa),], caption="Differentially Abundant Taxa") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), font_size = 10) %>%
+  scroll_box(width = "100%", height = "300px")
+```
+
+These are the taxa that are differentially **variable** between sample types and their false discovery corrected p-value. ASVs are listed by significance. 
+
+```{r warning=FALSE}
+otu_table(ps)["ASV_29",]
+ASV_29 <- bbdml(formula = ASV_29 ~ Sample_Type, phi.formula = ~ Sample_Type, data=ps)
+```
+
+This is the feature table for ASV_29, let's graph out this most significantly differentially abundant ASV *Romboutsia*. 
+Let's graph out the most significantly differentially variable ASV *Romboutsia*. 
+
+```{r}
+plot(ASV_29, color="Sample_Type")
+plot(ASV_29, AA = TRUE, color="Sample_Type")
+```
+
+These graphs show that ASV_29 *Treponema_2* is significantly variable.
+
+###Graphing Corncob output
+
+**Corncob is a new package and graphing isn't supported totally yet, so a figure combining all ASVs differentially abundant or differentially variable is in the works still**
+
+#Alpha Diversity {.tabset}
+
+##Exploring Alpha Diversity
+
+First we will look at richness without including our uncertainty of each measurement.
+```{r}
+#Exploring richness
+## Let's look at the observed richness of the water samples
+observed_c <- sample_richness(ps)
+summary(observed_c)
+plot(observed_c, ps, color = "Sample_Type")
+```
+
+Here we have a first look at the richness (number of observed ASVs), however, we will need to account for the differences in sequencing depth. To get an idea of the range of depth we will first grapth out the depth. 
+
+##Depth
+
+```{r}
+#Looking at samples at different depths as this may be confounded with observed richness. 
+data.frame("observed_richness" = (observed_c %>% summary)$estimate,
+           "depth" = phyloseq::sample_sums(ps), # Easter egg! Phyloseq's function to get depth
+           "Sample_Type" = ps %>% sample_data %>% get_variable("Sample_Type"),
+           "CowID" = ps %>% sample_data %>% get_variable("CowID")) %>%
+  ggplot(aes(x = depth, y = observed_richness, color = Sample_Type)) +
+  geom_point() + 
+  geom_text(aes(label = CowID))
+```
+
+Here we see that sample the liquid strained sample from cow 2372 has > 20,000 reads and the same cows soild sample has < 3,000 read. Thus, there are big differences in depth. So, we will explore this a bit more and account for it in our calculations of alpha diversity. 
+
+```{r}
+#Looking to see what the majority depth is. 
+data.frame("observed_richness" = (observed_c %>% summary)$estimate,
+           "depth" = phyloseq::sample_sums(ps), 
+           "Sample_Type" = ps %>% sample_data %>% get_variable("SamplePhase"),
+           "CowID" = ps %>% sample_data %>% get_variable("CowID")) %>%
+  ggplot(aes(x = depth, y = observed_richness, color = Sample_Type)) +
+  geom_point() + ylim(0, 3000) + xlim(0,15000)
+```
+
+Looks like the majority of the samples have under 15,000 reads. Two samples have more reads than 15,000. The fecal samples in general appear to have lower observed rightness. We will test this statistically next.
+
+```{r}
+#Get info on depth of sequecing for samples
+data.frame("Min" = min(sample_sums(ps)),"Max" = max(sample_sums(ps)),"Mean" = mean(sample_sums(ps)),
+           "Range" = range(sample_sums(ps)), "median" = median(sample_sums(ps)))
+```
+
+The sequencing depth ranges from 2,107 to 23,759 reads.
+
+```{r}
+#Checking which samples have fewer than 2,500 reads
+#function returns sample name and its column number
+which(!colSums(otu_table(ps)) > 2500)
+```
+
+Sample 360 (round in row 61) is the only sample with less than 2,500 reads
+
+##Richness
+
+Richness is defined as an estimate the number of ASVs in a sample. Next we will use breakaway to estimate the number of missing species based on the sequence depth and number of rare taxa in the data. These estimates account for different sequencing depths!
+
+```{r}
+#This is an alpha diversity estimate -- a special class for alpha diversity estimates
+ba <- breakaway(ps)
+ba 
+#plotting 
+plot(ba, ps, color = "Sample_Type")
+```
+
+The error bars here are quite large, but this is to be expected as there is a lot of uncertainty in estimating alpha diversity.
+
+Next we will test the hypothesis that different sample types have the same microbial diversity.
+
+```{r}
+#Testing differences between Sample Types
+bt_ST <- betta(summary(ba)$estimate,
+            summary(ba)$error,
+            make_design_matrix(ps, "Sample_Type"))
+bt_ST$table
+```
+
+When you break the rumen samples up into different sample types betta() estimates the mean species-level diversity aren't significantly different compared to fecal samples. We will have a look at a high level.
+
+```{r}
+ps_genus <- ps %>% tax_glom("Genus")
+ba_genus <- breakaway(ps_genus)
+#plotting 
+plot(ba_genus, ps_genus, color = "Sample_Type")
+```
+
+```{r}
+bt_ST_gen <- betta(summary(ba_genus)$estimate,
+            summary(ba_genus)$error,
+            make_design_matrix(ps_genus, "Sample_Type"))
+bt_ST_gen$table
+```
+
+betta() estimates the mean genus-level diversity in feces is 147 genera. Stomach Tube, liquid strained, solid and grab samples have significantly more Genera (on average 42, 9, 42 and 21 genera respectively). However, and liquid unstrained samples from the rumen aren't significantly different genera compared to fecal samples.
+
+##Evenness
+
+Evenness is defined as how balanced the ASVs are; in other words do they exist in approximately the same relative abundance (1=very even). DivNet is a new tool that allows you to estimate Shannon diversity in the presence of an ecological/microbial network! It also adjusts for different sequencing depths. 
+
+```{r echo=TRUE, eval=FALSE}
+#DivNet needs multiple cores to run, at least 10-15 with this dataset so this was saved and run on a cluster
+#saveRDS(ps, "C:/Users/Jill/OneDrive - UC Davis/Documents/collaboration/Depeters/ps.rds")
+#The following command was using for running divnet
+dv_ps_st <- ps %>% divnet(X = "Sample_Type", ncores = 15)
+```
+
+```{r eval=TRUE}
+#Running in DivNet object
+dv_ps_st <- readRDS("dv_ps_st_name_test.rds")
+```
+
+```{r eval=FALSE}
+#Plotting divnet shannon and simpson diversity
+plot(dv_ps_st$shannon, ps, col = "Sample_Type")
+plot(dv_ps_st$simpson, ps, col = "Sample_Type")
+```
+
+First, we will graph divnet's estimation of shannon diversity.
+
+```{r eval=TRUE}
+#Making dataframe to plot out alpha diversity
+boxpt_sh <- dv_ps_st$shannon %>%
+  summary %>%
+  add_column("SampleNames" = ps %>% otu_table %>% sample_names) %>%
+  add_column("Sample_Type" = sample_data(ps)$Sample_Type)
+boxpt_sh$Sample_Type <- gsub("_"," ",boxpt_sh$Sample_Type)
+
+#Plotting shannon diversity
+ggplot(boxpt_sh, aes(x = Sample_Type, y = estimate, col=Sample_Type)) +
+  geom_point(shape=16,size=2) +
+  geom_errorbar(aes(ymax=upper, ymin=lower),width=.2)+
+  theme(axis.text.x = element_text(angle = 305, face="bold"), axis.text.y = element_text(face="bold"), legend.text=element_text(face = "bold")) +
+  ylim(6,8)+
+  labs(y = "Divnet Estimate of Shannon Diversity", x="Sample Type", color="Sample Type")
+```
+
+Next, we will graph divnet's estimation of Simpson diversity.
+
+```{r eval=TRUE}
+#Making dataframe to plot out alpha diversity
+boxpt_sp <- dv_ps_st$simpson %>%
+  summary %>%
+  add_column("SampleNames" = ps %>% otu_table %>% sample_names) %>%
+  add_column("Sample_Type" = sample_data(ps)$Sample_Type)
+boxpt_sp$Sample_Type <- gsub("_"," ",boxpt_sp$Sample_Type)
+
+#Plotting shannon diversity
+ggplot(boxpt_sp, aes(x = Sample_Type, y = estimate, col=Sample_Type)) +
+  geom_point(shape=16,size=2) +
+  geom_errorbar(aes(ymax=upper, ymin=lower),width=.2)+
+  theme(axis.text.x = element_text(angle = 305, face="bold"), axis.text.y = element_text(face="bold"), legend.text=element_text(face = "bold")) +
+  #ylim(6,8)+
+  labs(y = "Divnet Estimate of Simpson Diversity", x="Sample Type", color="Sample Type")
+```
+
+Let's look at hypothesis testing for DivNet estimates of shannon and simpson diversity.
+```{r eval=TRUE, include=TRUE}
+#this is just a wrapper for the betta() function
+testDiversity(dv_ps_st, "shannon")
+
+testDiversity(dv_ps_st, "simpson")
+```
+
+#Beta Diversity
+
+We will plot the bray-curtis distances from Divnet. DivNet uses covariate information to share strength across samples and obtain an estimate about the beta diversity of the *ecosystems* not the samples.
+
+```{r eval=TRUE}
+sample_names(ps) <- paste0("sample_", sample_names(ps))
+simplifyBeta(dv_ps_st, ps, "bray-curtis", "Sample_Type") %>%
+  ggplot(aes(x = interaction(Covar1, Covar2), 
+             y = beta_est,
+            col = interaction(Covar1, Covar2))) +
+  geom_point() +
+  geom_linerange(aes(ymin = lower, ymax = upper)) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("") + ylab("Estimates of Bray-Curtis distance")
+```
+
+#Abundance of well studied species
+
+```{r}
+#Making new phyloseq object without tree
+otu_tab <- otu_table(ps)
+taxa_table <- tax_table(ps)
+smpl_data <- sample_data(ps)
+ps2 <- phyloseq(otu_tab, taxa_table, smpl_data)
+#Merge samples by sample type
+ps2_ST <- merge_samples(ps2, "Sample_Type", fun=mean)
+#Making relative
+ps2_rel <- transform_sample_counts(ps2_ST, function(x) 100*(x/sum(x)))
+#fix sample_data for sample type
+sample_data(ps2_rel)$Sample_Type <- c("Stomach_Tube", "Grab_Sample", "Liquid_Strained","Liquid_Unstrained", "Feces","Solid")
+#separating out taxa that are Pathogens that cause mastitis or Organisms that cause spoilage
+rum_bact <-subset_taxa(ps2_rel, Genus == "Ruminococcus_1" | Genus == "Eubacterium" | Genus == "Ruminobacter" | Genus == "Streptococcus" | Genus == "Succinimonas" | Genus == "Prevotella_1" | Genus == "Butyrivibrio" | Genus == "Selenomonas" | Genus == "Megasphaera" | Genus == "Lachnospira" | Genus == "Succinivibrio" | Genus == "Anaerovibrio" | Genus == "Peptostreptococcus" | Genus == "Clostridium" | Genus == "Wolinella" | Genus == "Methanobrevibacter" )
+
+#making table of unique taxa 
+
+kable(unique(tax_table(rum_bact)), caption="Taxonomy Table") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), font_size = 10) %>%
+  scroll_box(width = "100%", height = "300px")
+```
+
+The following were only found at the genus level:  
+* *Butyrivibrio fibrisolvens*  
+* *Lachnospira multiparus*  
+* *Selenomonas ruminantium*  
+* *Eubacterium ruminantium*  
+* *Streptococcus bovis*  
+* *Megaspaera elsdenii*  
+* *Prevotella brevis*  
+  
+The following identified in the data down to the species level:  
+* *Anaerovibrio lipolytica*  
+* *Succinimonas amylolytica*  
+* *Succinivibrio dextrinosolvens*  
+* *Ruminobacter ampylophilus*  
+* *Ruminococcus albus* --> under the name *Ruminococcus_1*  
+* *Ruminococcus flavefaciens* --> under the name *Ruminococcus_1*  
+* *Prevotella bryantii and ruminocola* --> under the name *Prevotella_1*  
+  
+The following were not in the data set at the genus level:  
+* *Methanobrevibacter ruminantium*  
+* *Wolinella succinogenes*  
+* *Clostridium aminophilum*  
+* *Clostridium sticklandii*  
+* *Peptostreptococcus anaerobius*  
+
+Now we will graph out the relative abundance of these taxa found in the data.
+
+```{r fig.height=8.5, fig.width=5}
+#calculating error bars to graph mean transformed abundance of major phyla
+melted <- psmelt(rum_bact)
+grouped <- dplyr::group_by(melted, X.SampleID, Genus, Sample_Type)
+bad <- as.data.frame(dplyr::summarise(grouped, mean=mean(Abundance), sd=sd(Abundance), sem = (sd(Abundance)/sqrt(length(Abundance)))))
+
+#Plotting relative abundance
+ggplot(bad, aes(x=Sample_Type, y=mean, fill= Genus))+
+  geom_bar(aes(color=Genus, fill=Genus), stat="identity", position=position_dodge(1), size=0.5, width=0.5)+
+  geom_errorbar(aes(ymin=mean-sem, ymax=mean+sem),width=.2, position=position_dodge(1))+
+  geom_abline(intercept = 0, slope = 0)+
+  theme_bw()+
+  facet_grid(Genus ~ ., labeller = label_parsed, scales="free")+
+  theme(legend.position="none",axis.text.x=element_text(angle=305,face = "bold"),strip.text.y=element_text(angle=0,face ="bold"),
+        strip.text.x=element_text(angle=0,face = "bold"), axis.text= element_text(face ="bold"),
+        axis.title=element_text(face="bold"),panel.grid.major.x = element_blank(),panel.grid.minor.y=element_blank())+
+  labs(x="Sample Type", y="Average Relative Abundance")
+```
+
+```{r}
+#Bubble graph
+ggplot(bad, aes(x=Sample_Type , y=Genus , size=mean)) %>%
+      + geom_point(aes(color=Sample_Type)) + 
+  theme(axis.text.x=element_text(angle=315),strip.text=element_text(face = "bold"), axis.text= element_text(face = "bold"), axis.title=element_text(face = "bold"), legend.text=element_text(face = "bold"), legend.title=element_text(face = "bold")) +
+  labs(x="Sample Type", color = "Sample Type", size = "Mean Percent \n Abundance")
+
+#Plotting relative abundance
+plot_bar(rum_bact, fill = "Genus", title = "Relative Abundance of Genera of Interest")+
+  geom_bar(aes(color=Genus, fill=Genus), stat="identity", position="stack")+
+  geom_abline(intercept = 0, slope = 0)+
+  labs(y="Percent Relative Abundance", x="Sample Type")+
+  theme(axis.text.x=element_text(angle=315),strip.text=element_text(face = "bold"), axis.text= element_text(face = "bold"), axis.title=element_text(face = "bold"), legend.text=element_text(face = "bold"), legend.title=element_text(face = "bold"))
+```
+
+#Effects of Time
+Let's have a look at how families change over time in one sample.
+```{r  fig.height=6}
+#Plotting relative abundance
+plot_bar(ps_phyla_rel, x="Sample_Type", fill= "Phylum")+
+  geom_bar(aes(color=Phylum, fill=Phylum), stat="identity", position="stack")+
+  geom_abline(intercept = 0, slope = 0)+
+  theme_bw()+
+  facet_grid(CowID ~ Day,labeller = label_parsed, scales="free", space="free_x")+
+  theme(axis.text.x=element_text(angle=305,face = "bold"),strip.text.y=element_text(angle=0,face = "bold"),strip.text.x=element_text(angle=0,face = "bold"), axis.text= element_text(face = "bold"), axis.title=element_text(face = "bold"), panel.grid.major.x = element_blank(),panel.grid.minor.y=element_blank())+
+  labs(x="Sample Type", y="Average Relative Abundance")
+```
+
+#Closer look at specific sample types {.tabset}
+
+We will remove other a few sample types to compress the data down and look just at the grab sample, feces and stomach tube.
+
+```{r subsetting sample types}
+ps_sub <- subset_samples(ps, Sample_Type == c("Grab Sample") | Sample_Type == c("Stomach Tube") | Sample_Type == c("Feces"))
+ps_sub <- prune_taxa(taxa_sums(ps_sub) > 0, ps_sub)
+ps_sub
+```
+
+After subsetting the data we have 5,373 ASVs in 36 samples.
+
+##Looking at metrics after filtering
+
+```{r}
+#number of taxa present
+ntaxa(ps_sub)
+#checking names of taxa present at specific rank
+length(get_taxa_unique(ps_sub, "Phylum"))
+length(get_taxa_unique(ps_sub, "Order"))
+length(get_taxa_unique(ps_sub, "Family"))
+length(get_taxa_unique(ps_sub, "Genus"))
+```
+
+Previously, there are 5,443 ASVs in the dataset. This was composed of 20 phyla, 74 Orders, 114 Families and 292 Genera.
+In the new subset we have 5,373 ASVs assigned to 20 Phyla, 73 Orders, 110 Families and 279 Genera.
+
+##Exploratory Analysis
+
+```{r qplot sub}
+qplot(log10(rowSums(otu_table(ps_sub))),binwidth=0.2) +
+  xlab("Logged counts-per-sample")
+```
+
+Again we will transformed the data for some exploratory analysis.
+ 
+```{r Bray-Curtis distance sub}
+set.seed(1850)
+#bray curtis distance
+pslog <- transform_sample_counts(ps_sub, function(x) log(1 + x))
+out.pcoa.log <- ordinate(pslog,  method = "MDS", distance = "bray")
+evals <- out.pcoa.log$values[,1]
+plot_ordination(pslog, out.pcoa.log, color = "Sample_Type") +
+  labs(col = "Sample Type")+
+  coord_fixed(sqrt(evals[2] / evals[1]))
+```
+
+As before the fecal samples pull away from the other samples on the first axis. Grab samples and Stomach Tube samples separate on the 2nd axis, but this difference is quite small. 
+
+```{r Weighted Eigenvalues sub, warning=FALSE}
+set.seed(1850)
+#weighted unifrac
+out.wuf.log <- ordinate(pslog, method = "MDS", distance = "wunifrac")
+evals <- out.wuf.log$values$Eigenvalues
+eval_per_wuf <- (out.wuf.log$values$Eigenvalues/(sum(out.wuf.log$values$Eigenvalues)))*100
+#Plotting eigenvalues to determine how many axis should be shown in graph
+barplot(eval_per_wuf[1:10],names.arg=paste0('Eigenvalue',1:10), ylab="Percent of explained variances", col="blue")
+```
+
+From the eigenvalues we can see that 2 axis is appropriate for graphing, together explaining almost 90% of the variance between the samples. 
+
+```{r Plot weighted sub}
+plot_ordination(pslog, out.wuf.log, color = "Sample_Type") +
+  labs(col = "Sample Type", title="Weighted Unifrac") +
+  coord_fixed(sqrt(evals[2] / evals[1]))
+```
+
+Now that we take into account phylogenetic information in the distance metric we see basically all the variation is explained by the differences between the rumen samples vs the feces. Grab samples and stomach tube samples are overlapping meaning they are not separting into distinct groups.
+
+```{r Unweighted Eigenvalues sub}
+out.unwuf.log <- ordinate(pslog, method = "MDS", distance = "unifrac")
+eval_per_unwuf <- (out.unwuf.log$values$Eigenvalues/(sum(out.unwuf.log$values$Eigenvalues)))*100
+#Plotting eigenvalues to determine how many axis should be shown in graph
+barplot(eval_per_unwuf[1:10],names.arg=paste0('Eigenvalue',1:10), ylab="Percent of explained variances", col="blue")
+```
+
+The eigenvalues here show 2 axis are sufficient to capture almost 64% of the total variation.
+
+```{r Unweighted plot sub}
+#UnWeighted unifrac
+evals_un <- out.unwuf.log$values$Eigenvalues
+plot_ordination(pslog, out.unwuf.log, color = "Sample_Type") +
+  labs(col = "Sample Type", title="Unweighted unifrac") +
+  coord_fixed(sqrt(evals_un[2] / evals_un[1]))
+```
+
+As before less of the variation is explained in each axis with the unweighted versus the weighted unifrac. Thus it seems that the difference between sample types is due to abundance differences and less about differences in species. The fecal samples are clustered closer together than with the weighted unifrac. There is a little separation (probably not significant) between grab samples and stomach tubing, so there is probably some species differences between the two sample types.
+
+##Corncob
+
+**###for the paper I would only use corncob and not DESeq2**
+
+We test all the taxa in our data to see if they are differentially-abundant or differentially-variable. The differentialTest function will these tests on all taxa, while controlling the false discovery rate to account for multiple comparisons.
+
+Although there are species to species differences between samples we might expect this to be the normal variation in sample collection. Thus, we are most concerned with particular family or generna that might be excluded when sampling via different methods.  
+
+```{r}
+ps_sub_gen <- tax_glom(ps_sub, "Genus")
+ps_sub_gen
+ps_sub_fam <- tax_glom(ps_sub, "Family")
+ps_sub_fam
+```
+
+```{r Running corncob sub, eval=FALSE, warning=FALSE}
+#we do not include the response term because we are testing multiple taxa.
+
+#We specify the covariates of our model using formula and phi.formula 
+#We also specify which covariates we want to test for by removing them in the formula_null and phi.formula_null arguments.
+
+# The difference between the formulas and the null version of the formulas
+# will be the variables that are tested. In this case, we will be testing the coefficients of Sample Type for
+# both the expected relative abundance and the overdispersion.
+
+
+ps_sub_fam2 <- subset_taxa(ps_sub_fam, Family != c("Bifidobacteriaceae"))
+ps_sub_fam2 <- subset_taxa(ps_sub_fam2, Family != c("Cardiobacteriaceae"))
+#We set fdr_cutoff to be our controlled false discovery rate.
+set.seed(1)
+da_analysis_sub <- differentialTest(formula = ~ Sample_Type, phi.formula = ~ Sample_Type,formula_null = ~ 1, phi.formula_null = ~ 1, test = "Wald", boot = FALSE, data = ps_sub_fam2, fdr_cutoff = 0.05)
+
+#When testing differential varibaility across a covariate, it was recommened to always control for the effect of that covariate on the abundance. 
+set.seed(1)
+da_analysis_sub_fam2 <- differentialTest(formula = ~ Sample_Type + CowID, phi.formula = ~ Sample_Type + CowID, formula_null = ~ CowID, phi.formula_null = ~ CowID, test = "Wald", boot = FALSE, data = ps_sub_fam2, fdr_cutoff = 0.05)
+
+set.seed(1)
+da_analysis_sub_gen <- differentialTest(formula = ~ Sample_Type + CowID, phi.formula = ~Sample_Type, formula_null = ~ 1, phi.formula_null = ~ 1, test = "Wald", boot = FALSE, data = ps_sub_gen, fdr_cutoff = 0.05)
+
+```
+
+We can see a list of differentially-abundant taxa using: 
+
+```{r}
+length(da_analysis_sub$significant_taxa)
+otu_to_taxonomy(OTU = da_analysis_sub_fam2$significant_taxa, data = ps_sub_fam, level=c("Phylum", "Family","Genus"))
+```
+```{r}
+length(which(is.na(da_analysis_sub_fam2$p)) %>% names)
+check_A <- bbdml(formula = ASV_4951 ~ Sample_Type + CowID,
+phi.formula = ~ Sample_Type + CowID,
+data = ps_sub_fam)
+check_A <- bbdml(formula = ASV_4951 ~ Sample_Type + CowID,
+phi.formula = ~ Sample_Type + CowID,
+data = ps_sub_fam)
+
+otu_table(ps_sub_fam)["ASV_4951"]
+
+```
+
+In this case, we Corncob has identified `r length(da_analysis$significant_taxa)` taxa that are differentially-abundant across \texttt{Sample_Type}.
+
+Let's extract the ASVs and their p-values.
+
+```{r Taxa for DA sub}
+#getting taxonomy
+DA_taxa <- otu_to_taxonomy(OTU = da_analysis_sub_fam2$significant_taxa, data = ps_sub, level=c("Family", "Genus"))
+#Getting p-values of Differentially variable ASVs
+ASVs <- c(row.names(as.data.frame(DA_taxa)))
+df <- as.data.frame(da_analysis_sub_fam2$p_fdr)
+df <- subset(df, row.names(df) %in% ASVs)
+df <- merge(df,as.data.frame(DA_taxa),by=0, all=TRUE) #by=0 means merge by row names
+colnames(df) <- c("ASV", "p_fdr", "Taxa")
+df <- df[order(df$p_fdr),]
+df$p_fdr <- format(df$p_fdr, digits = 3)
+kable(df, caption="Differentially Abundant Taxa") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), font_size = 10) %>%
+  scroll_box(width = "100%", height = "300px")
+```
+
+These are taxa that are differentailly **abundant** between sample types and their false discovery corrected p-value. ASVs are listed by significance. 
+
+Let's summarize this in a heatmap. First, we will make a phyloseq object of the ASVs that were found to be significantly different between sample types.
+
+```{r}
+#This function will return a phyloseq object with the taxa we want to keep 
+pop_taxa_keep = function(physeq, goodTaxa){
+  allTaxa = taxa_names(physeq)
+  myTaxa <- allTaxa[(allTaxa %in% goodTaxa)]
+  return(prune_taxa(myTaxa, physeq))
+}
+```
+
+```{r}
+#extracting out unique names
+goodTaxa = c(df$ASV) #pulls out all ASVs
+top100 <- c((as.data.frame(df[1:100,])$ASV)) #gives dataframe of top 100 ASVs
+sig <- c((as.data.frame(df[which(df$DA < 1e-05),])$ASV)) #gives dataframe of ASVs less than 1e-05
+ps_DA = pop_taxa_keep(ps_sub_gen, top100)
+ps_DA
+```
+ 
+```{r eval=TRUE, fig.height=6, fig.width=7}
+#gloming by Genus
+ps_top100 <- tax_glom(pop_taxa_keep(ps_sub_gen, top100), "Genus")
+#Making relative
+ps_100_rel <- transform_sample_counts(ps_top100, function(x) 100*(x/sum(x)))
+set.seed(2)
+p <- plot_heatmap(ps_100_rel, sample.label="Sample_Type", taxa.label="Genus")
+#naming axis
+p$scales$scales[[1]]$name <- "Sample Type"
+#p$scales$scales[[2]]$name <- "My Y-Axis"
+print(p)
+```
+
+This is a heatmap of the top 100 most sigificantly differientially abundant ASVs condensed into their respective genera.
+
+Now we will plot out all the tax that are differentially abuandant.
+
+```{r fig.height = 12, fig.width = 12}
+plot(da_analysis_sub_fam2,level=c("Family"))
+```
+
+From this graph it seems as though there are particular taxa that are vastly different depending on sample type and it's taking over the graph. Let's take a closer at ASV_2419 *Cardiobacteriaceae_Suttonella* and ASV_1448 *Ruminococcaceae_Harryflintia*.
+
+
+```{r eval=FALSE}
+#Changing into relative abundance
+ps_DA_rel <- transform_sample_counts(ps_DA, function(x) 100*(x/sum(x)))
+#Need to break up the sample types into 3 different phyloseq objects
+sm_ps <- list("Grab Sample", "Stomach Tube", "Feces")
+list_ps_sub <- lapply(sm_ps, function(sm_ps) subset_samples(ps_DA_rel, Sample_Type == c(as.character(sm_ps))))
+
+#Melting dataframe
+melted <- lapply(list_ps_sub, function(list_ps_sub) psmelt(list_ps_sub))
+grouped <- lapply(melted, function(melted) dplyr::group_by(melted, Sample_Type, Family))
+df_genus <- lapply(grouped, function(grouped) as.data.frame(dplyr::summarise(grouped, mean=mean(Abundance))))
+ggplot(NULL, aes(x=Sample_Type, y=mean, fill= Family), title = "Relative Abundance of Genera of Interest")+
+  geom_bar(aes(color=Family, fill=Family), data = df_genus[[1]], stat="identity") +
+  geom_bar(aes(color=Family, fill=Family), data = df_genus[[2]], stat="identity") +
+  geom_bar(aes(color=Family, fill=Family), data = df_genus[[3]], stat="identity") +
+theme(axis.text.x=element_text(angle=305,face = "bold"),strip.text.y=element_text(angle=0,face = "bold"),strip.text.x=element_text(angle=0,face = "bold"), axis.text= element_text(face = "bold"), axis.title=element_text(face = "bold"), panel.grid.major.x = element_blank(),panel.grid.minor.y=element_blank())
+```
+
+
+```{r warning=FALSE}
+#otu_table(ps)["ASV_2419",]
+list <- as.list(row.names(otu_table(ps_sub_fam2)))
+
+ASV_2419_full <- lapply(list, function(list) bbdml(formula = as.name(list) ~ Sample_Type+CowID, phi.formula = ~ Sample_Type+CowID, data=ps_sub_fam2))
+ASV_2419 <- bbdml(formula = ASV_2419 ~ Sample_Type, phi.formula = ~ Sample_Type, data=ps_sub_gen)
+lrtest(mod_null = ASV_2419, mod = ASV_2419_full)
+```
+
+Let's graph out this most significantly differentially abundant ASV *Ruminococcaceae_Harryflintia*. 
+
+```{r}
+plot(ASV_2419, color="Sample_Type")
+plot(ASV_2419, AA = TRUE,color="Sample_Type")
+```
+
+These graphs show that ASV_2419 *Cardiobacteriaceae_Suttonella* is in not found in fecal samples. We can double check this another way. 
+
+```{r}
+#Making phyloseq object with Deferribacteres
+ps_explore_Suttonella <- subset_taxa(ps_sub, Genus == c("Suttonella"))
+ps_explore_Suttonella <- prune_samples(sample_sums(ps_explore_Suttonella) > 0, ps_explore_Suttonella)
+ps_explore_Suttonella@sam_data$Sample_Type
+```
+
+Indeed ASV_2419 is not found in feces samples.
+
+```{r warning=FALSE}
+#otu_table(ps)["ASV_1448",]
+ASV_1448 <- bbdml(formula = ASV_1448 ~ Sample_Type, phi.formula = ~ CowID, data=ps_sub_gen)
+```
+
+Let's graph out this most significantly differentially abundant ASV *Ruminococcaceae_Harryflintia*. 
+
+```{r}
+plot(ASV_1448, color="Sample_Type")
+plot(ASV_1448, AA = TRUE,color="Sample_Type")
+```
+
+We will regraph our data and remove ASVs that are too big in the model.
+
+```{r fig.height = 12, fig.width = 12}
+plot(da_analysis_sub_gen,level=c("Family","Genus"))
+```
+
+```{r}
+grep("ASV_2419", da_analysis_sub_gen$significant_taxa)
+da_analysis_sub_gen[64]
+Coprococcus
+#Making phyloseq object without
+ps_sub_gen2 <- subset_taxa(ps_sub_gen, Genus != c("Suttonella"))
+ps_sub_gen2 <- subset_taxa(ps_sub_gen2, Genus != c("Harryflintia"))
+ps_sub_gen2 <- subset_taxa(ps_sub_gen2, Genus != c("Coprococcus_1"))
+ps_sub_gen2 <- subset_taxa(ps_sub_gen2, Genus != c("Coprococcus_3"))
+ps_sub_gen2 <- prune_samples(sample_sums(ps_sub_gen2) > 0, ps_sub_gen2)
+ps_sub_gen2
+
+set.seed(1)
+da_analysis_sub_gen2 <- differentialTest(formula = ~ Sample_Type, phi.formula = ~Sample_Type,formula_null = ~ 1, phi.formula_null = ~ 1, test = "Wald", boot = FALSE, data = ps_sub_gen2, fdr_cutoff = 0.05)
+```
+
+```{r fig.height = 12, fig.width = 12}
+plot(da_analysis_sub_gen2,level=c("Family","Genus"))
+```
+
+```{r}
+#Making phyloseq object without
+ps_sub_fam2 <- subset_taxa(ps_sub_fam, Family != c("Cardiobacteriaceae"))
+ps_sub_fam2 <- prune_samples(sample_sums(ps_sub_fam) > 0, ps_sub_fam)
+ps_sub_fam2
+
+set.seed(1)
+da_analysis_sub_gen2 <- differentialTest(formula = ~ Sample_Type, phi.formula = ~Sample_Type,formula_null = ~ 1, phi.formula_null = ~ 1, test = "Wald", boot = FALSE, data = ps_sub_gen2, fdr_cutoff = 0.05)
+```
+
+```{r fig.height = 12, fig.width = 12}
+plot(da_analysis_sub_gen2,level=c("Family"))
+```
+
+
+
+Before moving on we will have a quick look at the taxa that were not able to be fit to our model
+
+```{r}
+length(which(is.na(da_analysis_sub_gen$p)) %>% names)
+```
+
+In this case, `r length(which(is.na(da_analysis_sub_gen$p)) %>% names)` ASVs were not fit to the model. 
+
+```{r Running corncob sub, eval=FALSE, warning=FALSE}
+#we do not include the response term because we are testing multiple taxa.
+
+#We specify the covariates of our model using formula and phi.formula 
+#We also specify which covariates we want to test for by removing them in the formula_null and phi.formula_null arguments.
+
+# The difference between the formulas and the null version of the formulas
+# will be the variables that are tested. In this case, we will be testing the coefficients of Sample Type for
+# both the expected relative abundance and the overdispersion.
+
+#We set fdr_cutoff to be our controlled false discovery rate.
+set.seed(1)
+dv_analysis_sub_ExMod <- differentialTest(formula = ~ Sample_Type+Day, phi.formula = ~Sample_Type+Day,formula_null = ~ 1, phi.formula_null = ~ 1, test = "LRT", boot = FALSE, data = ps_sub, fdr_cutoff = 0.05)
+set.seed(1)
+dv_analysis_sub_comb <- differentialTest(formula = ~ SamDay, phi.formula = ~SamDay,formula_null = ~ 1, phi.formula_null = ~ 1, test = "LRT", boot = FALSE, data = ps_sub, fdr_cutoff = 0.05)
+set.seed(1)
+dv_analysis_sub <- differentialTest(formula = ~ Sample_Type, phi.formula = ~Sample_Type,formula_null = ~ 1, phi.formula_null = ~ 1, test = "LRT", boot = FALSE, data = ps_sub, fdr_cutoff = 0.05)
+```
+
+
+```{r}
+#getting taxonomy
+DV_taxa <- otu_to_taxonomy(OTU = dv_analysis_sub_ExMod$significant_taxa, data = ps_sub)
+#Getting p-values of Differentially variable ASVs
+ASVs <- c(row.names(as.data.frame(DV_taxa)))
+df <- as.data.frame(dv_analysis_sub_ExMod$p_fdr)
+df <- subset(df, row.names(df) %in% ASVs)
+df <- merge(df,as.data.frame(DV_taxa),by=0, all=TRUE) #by=0 means merge by row names
+colnames(df) <- c("ASV", "p_fdr", "Taxa")
+df$p_fdr <- format(df$p_fdr, digits = 3)
+df <- df[order(df$p_fdr),]
+kable(df[order(df$Taxa),], caption="Differentially Variable Taxa") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), font_size = 10) %>%
+  scroll_box(width = "100%", height = "300px")
+```
+
+These are the taxa that are differentially **variable** between sample types and their false discovery corrected p-value. ASVs are listed by significance. 
+
+```{r warning=FALSE}
+#otu_table(ps)["ASV_29",]
+ASV_3219 <- bbdml(formula = ASV_3219 ~ Sample_Type, phi.formula = ~ Sample_Type, data=ps_sub)
+```
+
+The most significantly differentially differentially ASV_3219, was previously found when Corncob was used on all sample types. 
+Let's graph out the most significantly differentially variable ASV *Bifidobacteriaceae*. 
+
+```{r echo=TRUE}
+plot(ASV_3219, facet="CowID", color="Sample_Type", shape="Day")
+plot(ASV_3219, AA = TRUE,facet="CowID", color="Sample_Type", shape="Day")
+```
+
+These graphs show that ASV_3219 *Bifidobacteriaceae* is significantly variable. Looks like this is due to a few samples having much higher abundance while most have none or very low abundance. 
+
+##Richness
+
+Richness is defined as an estimate the number of ASVs in a sample. Next we will use breakaway to estimate the number of missing species based on the sequence depth and number of rare taxa in the data. These estimates account for different sequencing depths!
+
+```{r eval=FALSE}
+#This is an alpha diversity estimate -- a special class for alpha diversity estimates
+ba <- breakaway(ps_sub)
+#plotting 
+plot(ba, ps_sub, color = "Sample_Type", shape="Day", facet="CowID")
+```
+
+The error bars here are quite large, but this is to be expected as there is a lot of uncertainty in estimating alpha diversity.
+
+Next we will test the hypothesis that different sample types have the same microbial diversity.
+
+```{r eval=FALSE}
+#Testing differences between Sample Types
+bt_ST <- betta(summary(ba)$estimate,
+            summary(ba)$error,
+            make_design_matrix(ps_sub, "Sample_Type"))
+bt_ST$table
+```
+
+Like before betta() estimates that the mean species-level diversity of the stomach tube and grab sample aren't significantly different compared to fecal samples.
+
+```{r}
+## We're now going to create our "design" matrix, a.k.a. "X matrix."
+## To do this we're going to cheat a little. We're going to use an
+## existing R method, lm, to save us the hassle.
+## We are going to investigate the effect of temperature and site
+covar_matrix <- model.matrix(lm(rnorm(dim(covariates)[1])~covariates$Site*(covariates$Season=="Summ")))
+head(covar_matrix)
+colnames(covar_matrix) <- c("Int", "SiteP", "Summer", "SitePSummer")
+## Details (skip if uninterested): lm(y~x+z) is a function that fits a
+## regression line to y using the variables x and z. It has a very nice
+## interface that saves you doing the hard work (aka "math") to create your
+## design matrix. The function we are going to use has no such nice interface.
+## For that reason, we steal the design matrix out of lm()'s implementation.
+## lm(y~x*z) looks at interactions. In this case, we are seeing if the
+## evenness trend as a function of temperature changes depending on the site
+
+## Easter egg: if you can put your own data (from your own research) in the
+## *exact* same form as the above example, you don't need to understand what
+## happens below. You can just copy it :)
+## Hint: The biggest problem you may have in implementing the above is
+## the ordering of the data and the covariates. The following:
+colnames(otu_table)==rownames(covariates)
+## being true in every spot is a necessary but not sufficient condition for
+## the following to work properly.
+
+ss <- summary(ba) 
+x_m <- model.matrix(~get_variable(ps_sub, c("Sample_Type", "Day")))
+bt <- betta(ss$estimate, ss$error, x_m)
+
+
+#### MODEL SPECIES RICHNESS, TEST SIGNIFICANCE, INTERPRET RESULTS
+## Let's go ahead and try to fit our model
+results <- betta(estimates_shannon[,1],estimates_shannon[,2],covar_matrix)
+## Let's take a look at the results
+results$table
+## Interpretation is idential to regression.
+```
+
+
+**This part is still running on the server and not ready yet**
+
+Evenness is defined as how balanced the ASVs are; in other words do they exist in approximately the same relative abundance (1=very even). DivNet is a new tool that allows you to estimate Shannon diversity in the presence of an ecological/microbial network! It also adjusts for different sequencing depths. 
+
+```{r eval=FALSE, echo=FALSE}
+#DivNet needs multiple cores to run, at least 10-15 with this dataset so this was saved and run on a cluster
+#saveRDS(ps, "C:/Users/Jill/OneDrive - UC Davis/Documents/collaboration/Depeters/ps.rds")
+#The following command was using for running divnet
+dv_pssub_st <- ps_sub %>% divnet(X = "Sample_Type", ncores = 15)
+```
+
+```{r eval=FALSE}
+#Running in DivNet object
+dv_pssub_st <- readRDS("dv_pssub_st_name_test.rds")
+#DivNet outputs a list of the estimates shannon, simpson (alpha diversity) bray-curtis, euclidean (beta diversity)
+dv_pssub_st %>% names
+```
+
+```{r eval=FALSE}
+#We can pull them out individually:
+dv_pssub_st$shannon %>%
+  summary %>%
+  add_column("SampleNames" = ps_sub %>% otu_table %>% sample_names) %>%
+  add_column("Sample_Type" = sample_data(ps_sub)$Sample_Type)
+
+#Plotting divnet shannon diversity
+plot(dv_pssub_st$shannon, ps_sub, col = "Sample_Type")
+plot(dv_pssub_st$simpson, ps_sub, col = "Sample_Type")
+#Making dataframe to plot out alpha diversity
+#df_alpha <- ps@sam_data %>% data.frame %>% add_column("Shannon" = dv_ps_st$shannon)
+#ggplot(aes(x = ps@sam_data$Sample_Type, y = dv_ps_st$shannon))
+#geom_point(aes(color = ps$Sample_Type), size = 3, shape = 17)
+
+```
+
+Let's look at hypothesis testing for DivNet.
+```{r eval=FALSE, include=TRUE}
+#this is just a wrapper for the betta() function
+testDiversity(dv_pssub_st, "shannon")
+
+testDiversity(dv_pssub_st, "simpson")
+```
+
+#Stomach tube --> transfaunating what communites?
+
+For this I can think we can just reference the phyla graphs in the "Abundance of Phyla" section. Also we will take a look more specifically at the taxa that the stomach tube samples have in common.
+
+```{r}
+ST <- subset_samples(ps, Sample_Type == c("Stomach Tube"))
+ST <- prune_taxa(taxa_sums(ST) > 0, ST)
+#making a list to determine core of each subset
+Core_ST <- filter_taxa(ST, function(x) sum(x >= 1) > (0.99*length(x)), TRUE)
+Core_ST
+```
+
+There are 248 taxa present in all stomach tube samples. 
+
+```{r}
+#checking names of taxa present at specific rank
+length(get_taxa_unique(Core_ST, "Phylum"))
+length(get_taxa_unique(Core_ST, "Order"))
+length(get_taxa_unique(Core_ST, "Family"))
+length(get_taxa_unique(Core_ST, "Genus"))
+```
+
+In stomach tube samples there are 10 phyla.
+
+Let's compare the stomach tube samples to the "gold standard" of grab sample. 
+```{r}
+GS <- subset_samples(ps, Sample_Type == c("Grab Sample"))
+GS <- prune_taxa(taxa_sums(GS) > 0, GS)
+df_GS <- as.data.frame(otu_table(GS))
+df_ST <- as.data.frame(otu_table(ST))
+length(setdiff(row.names(df_GS), row.names(df_ST))) #checking for ASVs that differ between the two sample types
+length(intersect(row.names(df_GS),row.names(df_ST))) #checking for ASVs in common
+```
+
+There are 256 ASVs are found in the grab sample, but not found in the stomach tube samples. There is also 3577 ASVs found in common between grab samples and stomach tube samples. Let's check at a higher taxonomic rank next.
+
+```{r}
+setdiff(get_taxa_unique(GS, "Genus"), get_taxa_unique(ST, "Genus"))
+```
+
+These genera are found in the grab sample, but not the stomach tube.
+
+```{r}
+intersect(get_taxa_unique(GS, "Genus"), get_taxa_unique(ST, "Genus"))
+```
+
+These are the genera that are found in both the grab sample and stomach tube.
+
+#How does the feed microbiome compare to the samples?
+
+```{r}
+ps_kit <- subset_samples(ps_kit, Sample_Type == c("TMR fecal kit") | Sample_Type == c("TMR plant kit"))
+ps_kit <- prune_taxa(taxa_sums(ps_kit) > 0, ps_kit)
+ps_kit <- subset_taxa(ps_kit, !is.na(Phylum) & !Phylum %in% c("", "uncharacterized"))
+ps_kit <- subset_taxa(ps_kit, !Phylum %in% filterPhyla)
+ps_kit <- subset_taxa(ps_kit, !Order %in% filterOR)
+length(setdiff(taxa_names(ps), taxa_names(ps_kit))) #checking for ASVs that differ between the two sample types
+length(intersect(taxa_names(ps),taxa_names(ps_kit))) #checking for ASVs in common
+```
+
+There were 217 taxa in the feed that are also found in the other samples. 
+
+Are the taxa found in the two kits different?
+
+```{r}
+ps_kit_plant <- subset_samples(ps_kit, Sample_Type == c("TMR plant kit"))
+ps_kit_plant <- prune_taxa(taxa_sums(ps_kit_plant) > 0, ps_kit_plant )
+ps_kit_plant
+ps_kit_fecal <- subset_samples(ps_kit, Sample_Type == c("TMR fecal kit"))
+ps_kit_fecal <- prune_taxa(taxa_sums(ps_kit_fecal) > 0, ps_kit_fecal)
+ps_kit_fecal
+```
+
+```{r}
+length(setdiff(taxa_names(ps_kit_plant), taxa_names(ps_kit_fecal))) #checking for ASVs that differ between the two sample types
+length(intersect(taxa_names(ps_kit_plant),taxa_names(ps_kit_fecal))) #checking for ASVs in common
+```
+
+There are 51 taxa that found in the plant kit and not in the fecal kit and there are 139 taxa that they share. However, since we don't have multiple samples we don't know if this is because of a differene in the kit or because their was different bacteria in the sample used. Let's see what the bacteria that are different between the two kits are.
+
+```{r}
+kept <- (pop_taxa_keep(ps_kit_plant, setdiff(taxa_names(ps_kit_plant), taxa_names(ps_kit_fecal))))
+get_taxa_unique(kept, "Genus")
+```
+
+These are the Genera that are found in the plant kit but not the fecal kit. Let's see if the taxa in the kits is in the fecal samples.
+
+```{r}
+print("Number of Taxa in common with the fecal kit")
+lapply(Subsets, function(Subsets) length(intersect(taxa_names(Subsets),taxa_names(ps_kit_fecal))))
+print("Number of Taxa in common with the plant kit")
+lapply(Subsets, function(Subsets) length(intersect(taxa_names(Subsets),taxa_names(ps_kit_plant))))
+```
+
+All sample types share taxa in common with the taxa in the kits with feces sharing the least.
+
+#CowPI
+##Extracting files for CowPI
+
+```{r Getting info out of DADA2, eval=FALSE, include=TRUE}
+#making and writing out a fasta of our final ASV seqs:
+write.table(row.names(otu_table(ps)), "ASVs_to_keep.txt", sep="\t", quote=F, row.names = FALSE)
+write.table(otu_table(ps), "OTU_Counts(ASVs).tab", sep="\t", quote=F)
+getwd()
+#Run the folling line on with qiime and then upload to galazy serverfilter_fasta.py -f ASVs.fa -o ASVs_filtered.fa -s ASVs_to_keep.txt
+```
+
+```{r}
+CowPI <- read.delim("CowPI.txt", header = TRUE, row.names=1, sep = "\t")
+colnames(CowPI) <- gsub("Sample_","", colnames(CowPI))
+ps_PI <- phyloseq(otu_table(CowPI, taxa_are_rows=TRUE), sample_data(MAP))
+sample_data(ps_PI)$CowID <- paste0("Cow_", sample_data(ps_PI)$CowID)
+ps_PI
+```
+
+```{r qplot}
+qplot(log10(rowSums(otu_table(ps_PI))),binwidth=0.2) +
+  xlab("Logged counts-per-sample")
+```
+
+Going to use log transformations for normalizing for library size during exploratory analysis. As this looks appropraite for the "tailed" data.
+
+```{r Weighted Eigenvalues, warning=FALSE}
+set.seed(1850)
+#weighted unifrac
+ps_PIlog <- transform_sample_counts(ps_PI, function(x) log(1 + x))
+out.bray.log <- ordinate(ps_PIlog, method = "MDS", distance = "bray")
+evals <- out.bray.log$values$Eigenvalues
+eval_per_bray <- (out.bray.log$values$Eigenvalues/(sum(out.bray.log$values$Eigenvalues)))*100
+#Plotting eigenvalues to determine how many axis should be shown in graph
+barplot(eval_per_bray[1:10],names.arg=paste0('Eigenvalue',1:10), ylab="Percent of explained variances", col="blue")
+```
+
+From the eigenvalues we can see that 2 axis is appropriate for graphing, together explaining almost 95% of the variance between the samples. 
+
+```{r Plot weighted}
+plot_ordination(ps_PIlog, out.bray.log, color = "Sample_Type") +
+  labs(col = "Sample_Type", title="Bray") +
+  coord_fixed(sqrt(evals[2] / evals[1]))
+```
+
+```{r}
+library(ade4)
+data(deug)
+pca1 <- dudi.pca(t(otu_table(ps_PIlog)), scan = FALSE)
+biplot(pca1)
+
+library(PMA)
+ps_cca <- prune_taxa(taxa_sums(ps) > 4, ps)
+ps_cca <- filter_taxa(ps_cca, filterfun(kOverA(3, 2)), TRUE)
+metab <- otu_table(ps_PI)
+keep_ix <- rowSums(metab == 0) <= 3
+metab <- metab[keep_ix, ]
+metab <- log(1 + metab, base = 10)
+
+X <- otu_table(ps_cca)
+
+cca_res <- CCA(t(otu_table(ps_cca)),  t(metab), penaltyx = .15, penaltyz = .15)
+cca_res
+```
+
+```{r}
+combined <- cbind(t(X[cca_res$u != 0, ]),
+                  t(metab[cca_res$v != 0, ]))
+pca_res <- dudi.pca(combined, scannf = F, nf = 3)
+genotype <- substr(rownames(pca_res$li), 1, 2)
+sample_type <- substr(rownames(pca_res$l1), 3, 4)
+feature_type <- grepl("\\.", colnames(combined))
+feature_type <- ifelse(feature_type, "Metabolite", "OTU")
+sample_info <- data.frame(pca_res$li, sample_type)
+feature_info <- data.frame(pca_res$c1,
+                           feature = substr(colnames(combined), 1, 6))
+
+```
+
+
+
+#Packages and versions used
+```{r}
+sessionInfo()
+```
