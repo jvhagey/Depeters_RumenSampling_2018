@@ -85,21 +85,3 @@ do
 	echo "time cutadapt -g ^GTGTGCCAGCMGCCGCGGTAA -G ^GGACTACHVGGGTWTCTAAT -p ${fname}_Trim_R1.fastq.gz -o ${fname}_Trim_R2.fastq.gz ../${fname}_R2_R2D.fastq.gz ../${fname}_R1_R2D.fastq.gz" >> $fname.CutAdapt.sh
 sbatch $fname.CutAdapt.sh
 done
-e
-#--------------------------------------------------------Concatonating ---------------------------------------------------------------#
-for f in /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC_R2D/No_Prime/*_Trim_R1.fastq.gz
-do
-	fname=$(basename $f _Trim_R1.fastq.gz)
-	echo $fname
-	echo "#!/bin/bash" > $fname.CC.sh
-	echo "##" >> $fname.CC.sh
-	echo "#SBATCH -p production" >> $fname.CC.sh
-	echo "#SBATCH --mem=10G" >> $fname.CC.sh
-	echo "#SBATCH --time=1:0:0" >> $fname.CC.sh
-	echo "#SBATCH -o /share/magalab/Jill/Depeters/CutAdapt_Trimmed_CC/Error_Out/${fname}_cc_cutadapt.out" >> $fname.CC.sh
-	echo "#SBATCH -e /share/magalab/Jill/Depeters/CutAdapt_Trimmed_CC/Error_Out/${fname}_cc_cutadapt.err" >> $fname.CC.sh
-	echo "cd /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC_R2D/No_Prime/" >> $fname.CC.sh
-	echo "time cat ${fname}_Trim_R1.fastq.gz ../../CutAdapt_TrimmedBC/No_Prime/${fname}_Trim_R1.fastq.gz >> ../../CutAdapt_Trimmed_CC/${fname}_Trim_R1_CC.fastq.gz" >> $fname.CC.sh
-	echo "time cat ${fname}_Trim_R2.fastq.gz ../../CutAdapt_TrimmedBC/No_Prime/${fname}_Trim_R2.fastq.gz >> ../../CutAdapt_Trimmed_CC/${fname}_Trim_R2_CC.fastq.gz" >> $fname.CC.sh
-sbatch $fname.CC.sh
-done
