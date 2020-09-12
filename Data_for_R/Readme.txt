@@ -1,0 +1,1 @@
+These files can be read into R and used to run the Rmarkdown file. Note that the Corncob and Divnet lines of code were run on a server and are read into the current Rmarkdown file. You will need to uncomment those lines to get the whole thing to run. 
