@@ -27,9 +27,9 @@ Grant id=XXX, agency= XX, title=XXXX
 #SBATCH -o /share/magalab/Jill/Depeters/Submit_SRA/Mothur_SRA.out
 #SBATCH -e /share/magalab/Jill/Depeters/Submit_SRA/Mothur_SRA.err
 module load mothur/1.39.5
+cd /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC/No_Prime/
+
 mothur /share/magalab/Jill/Depeters/Submit_SRA/Make_SRA.bat
-#bat file
-get.mimarkspackage(file=Demulti_Fastq.file, package=host_associated)
 
 #Demulti_Fastq.file contains in part (comes from Demultiplexing): 
 282	282_Trim_R1.fastq.gz	282_Trim_R2.fastq.gz
@@ -40,8 +40,13 @@ get.mimarkspackage(file=Demulti_Fastq.file, package=host_associated)
 
 #Step 3 add additional information into mimark file. 
 #---------------------------------------------------mimark File------------------------------------------------------------------------#
-#note that only water samples that had sequences were uploaded. Only one water sample ended up containing 
-#This information is all found in the uploaded files now (Accession #)
+#Opened this file and then added the rest of the information based on metadata file
+*sample_name	*description	*sample_title	*seq_methods	*organism	*collection_date	*env_biome	*env_feature	*env_material	*geo_loc_name	*host	*lat_lon	host_life_stage	host_sex	host_subject_id	host_taxid																																						samp_store_dur		samp_store_temp	samp_vol_we_dna_ext
+282	Stomach_Tube	Cow2549_Stomach_Tube_Day_9	F515 and R806 pooled PCR triplicate	bovine gut metagenome	18-Nov-16	Dairy Cow	Rumen	Liquid_Solids	USA:California:Davis	"""Bovine, Dairy Cow"""	not collected	Adult	Female	CowID_2549	9913 (Bos taurus)																																						~1 Month		C	
+283	Stomach_Tube	Cow2549_Stomach_Tube_Day_11	F515 and R806 pooled PCR triplicate	bovine gut metagenome	18-Nov-16	Dairy Cow	Rumen	Liquid_Solids	USA:California:Davis	"""Bovine, Dairy Cow"""	not collected	Adult	Female	CowID_2549	9914 (Bos taurus)																																									
+284	Stomach_Tube	Cow2477_Stomach_Tube_Day_7	F515 and R806 pooled PCR triplicate	bovine gut metagenome	18-Nov-16	Dairy Cow	Rumen	Liquid_Solids	USA:California:Davis	"""Bovine, Dairy Cow"""	not collected	Adult	Female	CowID_2477	9915 (Bos taurus)																																									
+285	Stomach_Tube	Cow2477_Stomach_Tube_Day_9	F515 and R806 pooled PCR triplicate	bovine gut metagenome	18-Nov-16	Dairy Cow	Rumen	Liquid_Solids	USA:California:Davis	"""Bovine, Dairy Cow"""	not collected	Adult	Female	CowID_2477	9916 (Bos taurus)																																									
+#etc for all samples
 
 #Step 4 make SRA file for submission
 #-----------------------------------------------------------SRA File-------------------------------------------------------------------#
@@ -53,9 +58,11 @@ get.mimarkspackage(file=Demulti_Fastq.file, package=host_associated)
 #SBATCH -o /share/magalab/Jill/Depeters/Submit_SRA/Mothur_SRA.out
 #SBATCH -e /share/magalab/Jill/Depeters/Submit_SRA/Mothur_SRA.err
 module load mothur/1.39.5
+cd /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC/No_Prime/
+
 mothur /share/magalab/Jill/Depeters/Submit_SRA/Make_SRA.bat
 #bat file
-make.sra(file=Demulti_Fastq.file, project=project.file, mimark=Demulti_Fastq_new.txt, platform=ILLUMINA, instrument=Illumina_MiSeq)
+make.sra(file=/share/magalab/Jill/Depeters/Submit_SRA/Demulti_Fastq.file, project=/share/magalab/Jill/Depeters/Submit_SRA/project.file, mimark=/share/magalab/Jill/Depeters/Submit_SRA/Demulti_Fastq.tsv, platform=ILLUMINA, instrument=Illumina_MiSeq)
 
 #Step 5 submit data from server to NCBI SRA
 #---------------------------------------------------Submitting Files to SRA------------------------------------------------------------#
