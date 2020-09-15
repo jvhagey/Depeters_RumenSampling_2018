@@ -1,0 +1,70 @@
+#This script was to make raw data from CDRF Dairy Fecal Microbiome ready for submission to NCBI
+#Samples were demultiplex with primers removed and cleaned with kneaddata before submission
+
+#Step 1 make project file
+#---------------------------------------------------Project File----------------------------------------------------------------#
+#contents of project.file
+Username jvhagey
+Last Hagey
+First Jill
+Email jvhagey@ucdavis.edu
+Center University of California, Davis
+Type Institute
+Ownership owner
+website  https://doi.org/10.5281/zenodo.4026848
+ProjectName Differences between rumen sampling methods and the fecal microbiome. 
+ProjectTitle Rumen Sampling Methods Bias Microbial Communities Observed
+Description Here we describe the differences between the fecal and rumen microbiome as well as differences in types of rumen sampling. 
+Grant id=XXX, agency= XX, title=XXXX
+
+#Step 2 make mimarkpackage 
+#---------------------------------------------------Mimarkfile File----------------------------------------------------------------#
+#!/bin/bash
+##
+#SBATCH --mem=6G
+#SBATCH --time=1-18:0:0
+#SBATCH -p production
+#SBATCH -o /share/magalab/Jill/Depeters/Submit_SRA/Mothur_SRA.out
+#SBATCH -e /share/magalab/Jill/Depeters/Submit_SRA/Mothur_SRA.err
+module load mothur/1.39.5
+mothur /share/magalab/Jill/Depeters/Submit_SRA/Make_SRA.bat
+#bat file
+get.mimarkspackage(file=Demulti_Fastq.file, package=host_associated)
+
+#Demulti_Fastq.file contains in part (comes from Demultiplexing): 
+282	282_Trim_R1.fastq.gz	282_Trim_R2.fastq.gz
+283	283_Trim_R1.fastq.gz	283_Trim_R2.fastq.gz
+284	284_Trim_R1.fastq.gz	284_Trim_R2.fastq.gz
+285	285_Trim_R1.fastq.gz	285_Trim_R2.fastq.gz
+#etc for all samples
+
+#Step 3 add additional information into mimark file. 
+#---------------------------------------------------mimark File------------------------------------------------------------------------#
+#note that only water samples that had sequences were uploaded. Only one water sample ended up containing 
+#This information is all found in the uploaded files now (Accession #)
+
+#Step 4 make SRA file for submission
+#-----------------------------------------------------------SRA File-------------------------------------------------------------------#
+#!/bin/bash
+##
+#SBATCH --mem=6G
+#SBATCH --time=1-18:0:0
+#SBATCH -p production
+#SBATCH -o /share/magalab/Jill/Depeters/Submit_SRA/Mothur_SRA.out
+#SBATCH -e /share/magalab/Jill/Depeters/Submit_SRA/Mothur_SRA.err
+module load mothur/1.39.5
+mothur /share/magalab/Jill/Depeters/Submit_SRA/Make_SRA.bat
+#bat file
+make.sra(file=Demulti_Fastq.file, project=project.file, mimark=Demulti_Fastq_new.txt, platform=ILLUMINA, instrument=Illumina_MiSeq)
+
+#Step 5 submit data from server to NCBI SRA
+#---------------------------------------------------Submitting Files to SRA------------------------------------------------------------#
+module load aspera-connect/3.5.1
+#Write sra@ncbi.nlm.nih.gov to get the key file for upload
+# -d is a directory that contains fastq raw files and submission.xml files
+ascp -i /share/tearlab/Maga/Jill/16s/Demultiplex_Before_QC/Mothur/<key> -QT -l100m -k1 -d /share/tearlab/Maga/Jill/16s/Demultiplex_Before_QC/Mothur/For_SRA_Upload/ asp-mothur@upload.ncbi.nlm.nih.gov:submit/Production/jvhagey
+
+#Do this last submit.ready is a blank file but it signals ncbi that submission of fastq files are complete
+ascp -i /share/tearlab/Maga/Jill/16s/Demultiplex_Before_QC/Mothur/mothur1.private.openssh -QT -l100m -k1 -d /share/tearlab/Maga/Jill/16s/Demultiplex_Before_QC/Mothur/submit.ready asp-mothur@upload.ncbi.nlm.nih.gov:submit/Production/jvhagey
+
+#Sequences are avaliable at SRA accession study number SRP115649.
