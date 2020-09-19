@@ -68,10 +68,17 @@ make.sra(file=/share/magalab/Jill/Depeters/Submit_SRA/Demulti_Fastq.file, projec
 #---------------------------------------------------Submitting Files to SRA------------------------------------------------------------#
 module load aspera-connect/3.5.1
 #Write sra@ncbi.nlm.nih.gov to get the key file for upload
+
+cd /share/magalab/Jill/Depeters/Submit_SRA/
+
+ascp -i /share/magalab/Jill/Depeters/Submit_SRA/mothur1.private.openssh -QT -l100m -k1 -d /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC/No_Prime/*.fastq.gz asp-mothur@upload.ncbi.nlm.nih.gov:submit/Test/jvhagey
+Where username is your NCBI username. If the upload to the test area succeeds you can proceed to upload to the Production area. The only change to your command line will be to change "Test" to "Production".
+ascp -i /share/magalab/Jill/Depeters/Submit_SRA/mothur1.private.openssh -QT -l100m -k1 -d /share/magalab/Jill/Depeters/CutAdapt_TrimmedBC/No_Prime/*.fastq.gz asp-mothur@upload.ncbi.nlm.nih.gov:submit/Production/jvhagey
+
 # -d is a directory that contains fastq raw files and submission.xml files
 ascp -i /share/tearlab/Maga/Jill/16s/Demultiplex_Before_QC/Mothur/<key> -QT -l100m -k1 -d /share/tearlab/Maga/Jill/16s/Demultiplex_Before_QC/Mothur/For_SRA_Upload/ asp-mothur@upload.ncbi.nlm.nih.gov:submit/Production/jvhagey
 
 #Do this last submit.ready is a blank file but it signals ncbi that submission of fastq files are complete
-ascp -i /share/tearlab/Maga/Jill/16s/Demultiplex_Before_QC/Mothur/mothur1.private.openssh -QT -l100m -k1 -d /share/tearlab/Maga/Jill/16s/Demultiplex_Before_QC/Mothur/submit.ready asp-mothur@upload.ncbi.nlm.nih.gov:submit/Production/jvhagey
+ascp -i /share/magalab/Jill/Depeters/Submit_SRA/mothur1.private.openssh -QT -l100m -k1 -d /share/magalab/Jill/Depeters/Submit_SRA/submit.ready asp-mothur@upload.ncbi.nlm.nih.gov:submit/Production/jvhagey
 
 #Sequences are avaliable at SRA accession study number SRP115649.
