@@ -9,4 +9,4 @@
 - [Interactive figure 3 - DPCoA_NoFirmBact](https://jvhagey.github.io/Depeters_RumenSampling_2018/DPCoA_NoFirmBact.html)
 - [Interactive figure 4 - Unweighted UniFrac](https://jvhagey.github.io/Depeters_RumenSampling_2018/UnWeighted_unifrac.html)
 
-[Paper Rmarkdown](https://jvhagey.github.io/Depeters_RumenSampling_2018/Depeters_RumenSampling2018_C.html)
+[Paper Rmarkdown](https://github.com/jvhagey/Depeters_RumenSampling_2018/blob/master/Depeters_RumenSampling2018_C.html)
