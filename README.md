@@ -1,7 +1,9 @@
 # Depeters_RumenSampling_2018
 16s analysis for Depeters rumen sampling study
 
-[![DOI](https://zenodo.org/badge/147391836.svg)](https://zenodo.org/badge/latestdoi/147391836)
+<!--- [![DOI](https://zenodo.org/badge/147391836.svg)](https://zenodo.org/badge/latestdoi/147391836) --->
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4026849.svg)](https://doi.org/10.5281/zenodo.4026849)
+
 
 *Interactive figures can be found in the docs folder*  
 - [Interactive figure 1 - Minor Phyla](https://jvhagey.github.io/Depeters_RumenSampling_2018/Minor_phyla_plotly.html)  
